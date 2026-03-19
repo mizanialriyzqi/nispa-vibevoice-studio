@@ -9,9 +9,43 @@ export interface GpuDetailsResponse {
     gpu_devices: SystemInfoData['gpu']['gpu_devices'];
 }
 
+export interface MaintenanceStats {
+    db_size_mb: number;
+    job_count: number;
+    audio_size_mb: number;
+    audio_folder_count: number;
+}
+
+export interface VacuumResult {
+    size_before_mb: number;
+    size_after_mb: number;
+    saved_mb: number;
+}
+
+export interface OrphanFolder {
+    folder: string;
+    job_id: number | null;
+    size_mb: number;
+}
+
+export interface OrphanAudioResult {
+    orphans: OrphanFolder[];
+    total_mb: number;
+}
+
+export interface DeleteOrphanResult {
+    deleted: OrphanFolder[];
+    errors: { folder: string; error: string }[];
+    total_freed_mb: number;
+}
+
 export const systemApi = {
     getStatus: () => apiGet<StatusResponse>('/api/status'),
     getSystemInfo: () => apiGet<SystemInfoData>('/api/system-info'),
     getGpuDetails: () => apiGet<GpuDetailsResponse>('/api/system/gpu-details'),
     testQwen: () => apiFetch('/api/system/test-qwen', { method: 'POST' }),
+    getMaintenanceStats: () => apiGet<MaintenanceStats>('/api/maintenance/stats'),
+    vacuumDb: () => apiFetch('/api/maintenance/vacuum', { method: 'POST' }),
+    listOrphanAudio: () => apiGet<OrphanAudioResult>('/api/maintenance/orphan-audio'),
+    deleteOrphanAudio: () => apiFetch('/api/maintenance/orphan-audio', { method: 'DELETE' }),
 };

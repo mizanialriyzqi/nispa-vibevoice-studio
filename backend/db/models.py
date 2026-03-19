@@ -27,7 +27,6 @@ class SubtitleSegmentData(BaseModel):
     is_translated: Optional[bool] = False
     original_text: Optional[str] = None
     audioUrl: Optional[str] = None
-    audioBase64: Optional[str] = None
     voice_id: Optional[str] = None
     model_name: Optional[str] = None
     language: Optional[str] = None
@@ -47,6 +46,7 @@ class JobCreate(BaseModel):
         voice_id (str): Reference ID for the TTS voice.
         voice_name (str): Human-readable name of the voice.
         model_name (str): TTS model to use.
+        language (Optional[str]): Generation language selected for the job.
         group_by_punctuation (bool): Whether punctuation grouping was applied. Defaults to False.
         notes (Optional[str]): Optional user notes for the job.
     """
@@ -56,6 +56,7 @@ class JobCreate(BaseModel):
     voice_id: str
     voice_name: str
     model_name: str
+    language: Optional[str] = None
     group_by_punctuation: bool = False
     notes: Optional[str] = None
 
@@ -66,9 +67,15 @@ class JobUpdate(BaseModel):
     Attributes:
         modified_segments (Optional[List[SubtitleSegmentData]]): Updated subtitle segments.
         notes (Optional[str]): Updated user notes.
+        language (Optional[str]): Generation language selected for the job.
+        voice_id (Optional[str]): Updated voice ID.
+        model_name (Optional[str]): Updated model name.
     """
     modified_segments: Optional[List[SubtitleSegmentData]] = None
     notes: Optional[str] = None
+    language: Optional[str] = None
+    voice_id: Optional[str] = None
+    model_name: Optional[str] = None
 
 class JobResponse(BaseModel):
     """
@@ -96,6 +103,7 @@ class JobResponse(BaseModel):
     voice_id: str
     voice_name: str
     model_name: str
+    language: Optional[str] = None
     group_by_punctuation: bool
     notes: Optional[str]
     audio_url: Optional[str]
@@ -103,12 +111,31 @@ class JobResponse(BaseModel):
     updated_at: str
     status: str
 
+class JobLiteResponse(BaseModel):
+    """
+    Data model for a lightweight job response, excluding large subtitle segments.
+    Used for the archive list view to prevent excessive data transfer.
+    """
+    id: int
+    original_filename: str
+    voice_id: str
+    voice_name: str
+    model_name: str
+    group_by_punctuation: bool
+    notes: Optional[str]
+    audio_url: Optional[str]
+    created_at: str
+    updated_at: str
+    status: str
+    has_audio: bool = False
+    is_translated: bool = False
+
 class JobListResponse(BaseModel):
     """
     Data model for a paginated list of jobs.
 
     Attributes:
-        jobs (List[JobResponse]): The list of job records.
+        jobs (List[JobResponse]): The list of job records with full segments.
         total (int): Total number of jobs in the database.
     """
     jobs: List[JobResponse]

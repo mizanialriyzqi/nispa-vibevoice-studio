@@ -17,6 +17,27 @@ OUTPUTS_DIR = DATA_DIR / "outputs"
 for d in [VOICES_DIR, MODELS_DIR, TRANSLATION_MODELS_DIR, OUTPUTS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
+SOX_SEARCH_PATHS = [
+    r"C:\Program Files (x86)\sox-14-4-2",
+    r"C:\Program Files\sox-14-4-2",
+    r"C:\Program Files (x86)\sox",
+    r"C:\Program Files\sox",
+    r"C:\sox",
+]
+
+def _find_sox_executable() -> str:
+    """Returns the full path to sox.exe if found in common Windows locations, else 'sox'."""
+    import shutil
+    if shutil.which("sox"):
+        return "sox"
+    for directory in SOX_SEARCH_PATHS:
+        candidate = os.path.join(directory, "sox.exe")
+        if os.path.isfile(candidate):
+            print(f"[Config] Auto-detected SoX at: {candidate}")
+            return candidate
+    return "sox"
+
+
 class ConfigManager:
     """
     Manages system-wide settings and paths, with persistence in a JSON file.
@@ -39,6 +60,7 @@ class ConfigManager:
 
     def __init__(self):
         self.settings = self.load_settings()
+        self._auto_detect_sox()
 
     def load_settings(self) -> Dict[str, Any]:
         if not SETTINGS_FILE.exists():
@@ -71,6 +93,17 @@ class ConfigManager:
             else:
                 result[key] = value
         return result
+
+    def _auto_detect_sox(self):
+        """If sox path in settings is just 'sox' and not resolvable, search common locations and persist."""
+        import shutil
+        current = self.settings.get("paths", {}).get("sox", "sox")
+        # Only auto-detect if current setting is the bare command and it's not in PATH
+        if current == "sox" and not shutil.which("sox"):
+            detected = _find_sox_executable()
+            if detected != "sox":
+                self.settings.setdefault("paths", {})["sox"] = detected
+                self.save_settings(self.settings)
 
     def get_path(self, key: str) -> str:
         return self.settings.get("paths", {}).get(key, key)

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useGenerationProgress } from '../hooks/useGenerationProgress';
 import { useActivityLogs } from '../hooks/useActivityLogs';
 import { useTtsSelection } from '../hooks/useTtsSelection';
@@ -7,8 +7,10 @@ import type { ReactNode, RefObject, Dispatch, SetStateAction, FC } from 'react';
 import { useGlobalContext } from '../../../context/GlobalContext';
 import type { Job } from '../../../hooks/useJobArchive';
 import { ttsApi } from '../../../services/ttsApi';
-import { base64ToBlobUrl } from '../../../utils/audio';
+import { serializeAudioUrl, filePathToHttpUrl } from '../../../utils/audio';
+import { API_BASE_URL } from '../../../services/apiClient';
 import type { GeneratedSegment, PreviewData } from '../../../types/generated';
+import { showToast } from '../../../utils/uiEvents';
 
 // --- Interfaces ---
 
@@ -23,7 +25,6 @@ export interface SubtitleSegment {
     is_translated?: boolean;
     original_text?: string;
     audioUrl?: string;
-    audioBase64?: string; // Raw base64 for persistence
     voice_id?: string;
     model_name?: string;
     language?: string;
@@ -112,7 +113,7 @@ interface SubtitleContextProps {
     cancelGeneration: (finalize?: boolean) => Promise<void>;
 
     // Callbacks
-    loadJobSegments: (job: Job) => void;
+    loadJobSegments: (job: Job) => Promise<void>;
     saveJobDraft: (customNote?: string, customSegments?: SubtitleSegment[], customFilename?: string, silent?: boolean) => Promise<number | null>;
     updateJob: (jobId: number, updateData: Record<string, unknown>) => Promise<Job | null>;
 }
@@ -131,8 +132,6 @@ const SubtitleContext = createContext<SubtitleContextProps | undefined>(undefine
  * @param {ReactNode} props.children - Child components to be wrapped.
  */
 export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
-    // ... (rest remains the same up to saveJobDraft)
-
     const { voices, models } = useGlobalContext();
     const { loadedJobId, setLoadedJobId, saveJobAction, updateJob } = useJobPersistence();
 
@@ -158,7 +157,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const [subtitleSegments, setSubtitleSegmentsState] = useState<SubtitleSegment[]>([]);
     const segmentsRef = useRef<SubtitleSegment[]>([]);
 
-    const setSubtitleSegments = (s: SubtitleSegment[] | ((prev: SubtitleSegment[]) => SubtitleSegment[])) => {
+    const setSubtitleSegments = useCallback((s: SubtitleSegment[] | ((prev: SubtitleSegment[]) => SubtitleSegment[])) => {
         if (typeof s === 'function') {
             setSubtitleSegmentsState(prev => {
                 const next = s(prev);
@@ -169,7 +168,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             setSubtitleSegmentsState(s);
             segmentsRef.current = s;
         }
-    };
+    }, []);
     const [showEditor, setShowEditor] = useState(false);
     const [showArchive, setShowArchive] = useState(false);
     const {
@@ -199,17 +198,17 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
      * 
      * @param {boolean} finalize - Whether to request the backend to finalize partial results.
      */
-    const cancelGeneration = async (finalize: boolean = false) => {
+    const cancelGeneration = useCallback(async (finalize: boolean = false) => {
         if (!currentTaskId) return;
 
         try {
             const res = await ttsApi.cancelTask(currentTaskId, finalize);
             if (res.ok) {
                 const timestamp = new Date().toLocaleTimeString();
-                const logMsg = finalize 
+                const logMsg = finalize
                     ? `[${timestamp}] ✗ Generation interrupted. Finalizing what was generated...`
                     : `[${timestamp}] ✗ Generation cancelled and discarded.`;
-                
+
                 setActivityLogs(prev => [...prev, logMsg]);
                 if (!finalize) {
                     setCurrentTaskId(null);
@@ -218,7 +217,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
         } catch (err) {
             console.error("Failed to cancel task:", err);
         }
-    };
+    }, [currentTaskId, setActivityLogs]);
 
     /**
      * Saves the current subtitle configuration and segments as a draft job.
@@ -243,7 +242,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
         }
 
         if (segmentsToSave.length === 0) {
-            if (!silent) alert('Please load subtitles first');
+            if (!silent) showToast('Please load subtitles first', 'info');
             return;
         }
 
@@ -251,10 +250,16 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (loadedJobId) {
             try {
                 const updated = await updateJob(loadedJobId, {
-                    modified_segments: segmentsToSave,
-                    notes: customNote || 'Updated from UI'
+                    modified_segments: segmentsToSave.map(s => ({
+                        ...s,
+                        audioUrl: serializeAudioUrl(s.audioUrl),
+                    })),
+                    notes: customNote || 'Updated from UI',
+                    language: selectedLanguage || undefined,
+                    voice_id: selectedVoiceId || undefined,
+                    model_name: selectedModel || undefined,
                 });
-                if (updated && !silent && !customNote) alert(`Job #${loadedJobId} updated!`);
+                if (updated && !silent && !customNote) showToast(`Job #${loadedJobId} updated!`, 'success');
                 return loadedJobId;
             } catch (err) {
                 console.error("Failed to update job:", err);
@@ -268,8 +273,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 ...s,
                 text: s.original_text || s.text,
                 is_translated: false,
-                audioUrl: s.audioUrl || null,
-                audioBase64: s.audioBase64 || null,
+                audioUrl: null,
                 voice_id: s.voice_id || null,
                 model_name: s.model_name || null,
                 language: s.language || null,
@@ -277,8 +281,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             })),
             modified_segments: segmentsToSave.map(s => ({
                 ...s,
-                audioUrl: s.audioUrl || null,
-                audioBase64: s.audioBase64 || null,
+                audioUrl: serializeAudioUrl(s.audioUrl),
                 voice_id: s.voice_id || null,
                 model_name: s.model_name || null,
                 language: s.language || null,
@@ -287,6 +290,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             voice_id: selectedVoiceId || "None",
             voice_name: voices.find(v => v.id === selectedVoiceId)?.name || selectedVoiceId || "None",
             model_name: selectedModel || "None",
+            language: selectedLanguage || null,
             group_by_punctuation: groupByPunctuation,
             notes: customNote || 'Draft saved from UI'
         };
@@ -296,30 +300,26 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             setLoadedJobId(newJob.id);
             return newJob.id;
         }
-        
+
         return null;
     };
 
     /**
      * Loads a specific job from the archive into the current context.
      * 
-     * @param {any} job - The job object from the database.
+     * @param {any} job - The job object from the database (might be Lite).
      */
-    const loadJobSegments = (job: Job) => {
+    const loadJobSegments = useCallback(async (job: Job) => {
         setLoadedJobId(job.id);
 
-        // Use modified_segments as the primary source, ensuring audio fields are preserved
-        // We need to convert saved Base64 back to Blob URLs for the browser
+        // Use modified_segments as the primary source, ensuring audio fields are preserved.
+        // audioUrl in the DB is now a relative file path (data/audio-rendering/...)
+        // which we convert to an HTTP URL for playback.
         const segments = (job.modified_segments || job.subtitle_segments || []).map((s: SubtitleSegment) => {
             let audioUrl = s.audioUrl || null;
-            
-            // If we have base64 but no valid blob URL (which is always true on reload), reconstruct it
-            if (s.audioBase64 && (!audioUrl || audioUrl.startsWith('blob:'))) {
-                try {
-                    audioUrl = base64ToBlobUrl(s.audioBase64);
-                } catch (e) {
-                    console.error("Failed to reconstruct audio from base64:", e);
-                }
+
+            if (audioUrl && audioUrl.startsWith('data/audio-rendering/')) {
+                audioUrl = filePathToHttpUrl(audioUrl, API_BASE_URL);
             }
 
             return {
@@ -332,13 +332,15 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             };
         });
         setSubtitleSegments(segments);
-        
+
         setSelectedVoiceId(job.voice_id);
         setSelectedModel(job.model_name);
         setGroupByPunctuation(job.group_by_punctuation);
-        
-        // Try to recover the target language from notes if possible
-        if (job.notes) {
+
+        // Restore generation language — prefer dedicated field, fall back to notes regex for legacy jobs
+        if (job.language) {
+            setSelectedLanguage(job.language);
+        } else if (job.notes) {
             const langMatch = job.notes.match(/to ([A-Za-z\s]+)(?: \(|$)/);
             if (langMatch) setSelectedLanguage(langMatch[1].trim());
         }
@@ -346,39 +348,80 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
         const pseudoFile = new File([], job.original_filename || 'recovered_job.srt');
         setSubtitleFile(pseudoFile);
 
-        alert(`Loaded job #${job.id}: ${job.original_filename}`);
-    };
+        showToast(`Loaded job #${job.id}: ${job.original_filename}`, 'info');
+    }, [setLoadedJobId, setSubtitleFile, setSelectedVoiceId, setSelectedModel, setSelectedLanguage, setSubtitleSegments]);
+
+    const contextValue = useMemo(() => ({
+        subtitleFile, setSubtitleFile,
+        subtitleInputRef,
+        errorMsg, setErrorMsg,
+        selectedVoiceId, setSelectedVoiceId,
+        selectedModel, setSelectedModel,
+        selectedLanguage, setSelectedLanguage,
+        activityLogs,
+        showLogsModal, setShowLogsModal,
+        addLog, clearLogs,
+        currentAudioUrl, setCurrentAudioUrl,
+        groupByPunctuation, setGroupByPunctuation,
+        previewData, setPreviewData,
+        showPreview, setShowPreview,
+        loadingPreview, setLoadingPreview,
+        subtitleSegments, setSubtitleSegments,
+        loadedJobId, setLoadedJobId,
+        showEditor, setShowEditor,
+        showArchive, setShowArchive,
+        generationProgress, setGenerationProgress,
+        generatedSegments, setGeneratedSegments,
+        showReviewModal, setShowReviewModal,
+        totalItems, currentItems, estimatedTime,
+        updateItemProgress, recordStartTime, resetProgress,
+        currentTaskId, setCurrentTaskId,
+        cancelGeneration,
+        loadJobSegments, saveJobDraft,
+        updateJob
+    }), [
+        subtitleFile,
+        errorMsg,
+        selectedVoiceId,
+        setSelectedVoiceId,
+        selectedModel,
+        setSelectedModel,
+        selectedLanguage,
+        setSelectedLanguage,
+        activityLogs,
+        showLogsModal,
+        setShowLogsModal,
+        addLog,
+        clearLogs,
+        currentAudioUrl,
+        groupByPunctuation,
+        previewData,
+        showPreview,
+        loadingPreview,
+        subtitleSegments,
+        setSubtitleSegments,
+        loadedJobId,
+        setLoadedJobId,
+        showEditor,
+        showArchive,
+        generationProgress,
+        generatedSegments,
+        showReviewModal,
+        totalItems,
+        currentItems,
+        estimatedTime,
+        updateItemProgress,
+        recordStartTime,
+        resetProgress,
+        currentTaskId,
+        cancelGeneration,
+        loadJobSegments,
+        saveJobDraft,
+        updateJob
+    ]);
 
     return (
-        <SubtitleContext.Provider value={{
-            subtitleFile, setSubtitleFile,
-            subtitleInputRef,
-            errorMsg, setErrorMsg,
-            selectedVoiceId, setSelectedVoiceId,
-            selectedModel, setSelectedModel,
-            selectedLanguage, setSelectedLanguage,
-            activityLogs,
-            showLogsModal, setShowLogsModal,
-            addLog, clearLogs,
-            currentAudioUrl, setCurrentAudioUrl,
-            groupByPunctuation, setGroupByPunctuation,
-            previewData, setPreviewData,
-            showPreview, setShowPreview,
-            loadingPreview, setLoadingPreview,
-            subtitleSegments, setSubtitleSegments,
-            loadedJobId, setLoadedJobId,
-            showEditor, setShowEditor,
-            showArchive, setShowArchive,
-            generationProgress, setGenerationProgress,
-            generatedSegments, setGeneratedSegments,
-            showReviewModal, setShowReviewModal,
-            totalItems, currentItems, estimatedTime,
-            updateItemProgress, recordStartTime, resetProgress,
-            currentTaskId, setCurrentTaskId,
-            cancelGeneration,
-            loadJobSegments, saveJobDraft,
-            updateJob
-        }}>
+        <SubtitleContext.Provider value={contextValue}>
             {children}
         </SubtitleContext.Provider>
     );

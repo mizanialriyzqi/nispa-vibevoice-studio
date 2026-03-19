@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useGlobalContext } from '../../context/GlobalContext';
 import type { Voice } from '../../context/GlobalContext';
 import { voicesApi } from '../../services/voicesApi';
+import { showConfirm } from '../../utils/uiEvents';
 
 export const useVoicesManagement = () => {
     const { voices, refreshTtsData, isLoadingTtsData } = useGlobalContext();
@@ -26,7 +27,14 @@ export const useVoicesManagement = () => {
     };
 
     const handleDelete = async (voiceId: string) => {
-        if (!confirm(`Are you sure you want to delete the voice "${voiceId}"?`)) return;
+        const confirmed = await showConfirm({
+            title: 'Delete Voice',
+            message: `Are you sure you want to delete the voice "${voiceId}"?`,
+            confirmLabel: 'Delete',
+            cancelLabel: 'Cancel',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
 
         try {
             const res = await voicesApi.delete(voiceId);

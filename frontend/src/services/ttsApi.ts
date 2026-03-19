@@ -11,6 +11,7 @@ export interface ModelsResponse {
 
 export interface GenerateSegmentResponse {
     audio_base64: string;
+    audio_path: string | null;
 }
 
 export const ttsApi = {

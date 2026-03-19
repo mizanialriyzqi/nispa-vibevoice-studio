@@ -6,8 +6,12 @@ import os
 import asyncio
 import uvicorn
 import subprocess
+import shutil
+from pathlib import Path
 from core.tts_provider import tts_engine
 from core.config import MODELS_DIR, config_manager
+from core.audio_storage import AUDIO_RENDERING_ROOT
+from db.database import DB_PATH, get_all_jobs
 
 router = APIRouter(prefix="/api")
 
@@ -211,3 +215,146 @@ async def get_gpu_details():
     """Per-device GPU details. Called only on explicit user request to avoid GPU driver conflicts."""
     devices = await asyncio.to_thread(_collect_gpu_details)
     return {"gpu_devices": devices}
+
+
+# ---------------------------------------------------------------------------
+# Maintenance endpoints
+# ---------------------------------------------------------------------------
+
+def _get_dir_size_mb(path: Path) -> float:
+    """Returns directory size in MB, or 0.0 if not exists."""
+    if not path.exists():
+        return 0.0
+    total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    return round(total / (1024 * 1024), 2)
+
+
+@router.get("/maintenance/stats")
+async def get_maintenance_stats():
+    """
+    Returns DB size, job count, and audio rendering folder size.
+    """
+    import sqlite3
+
+    db_size_mb = round(DB_PATH.stat().st_size / (1024 * 1024), 2) if DB_PATH.exists() else 0.0
+    audio_size_mb = await asyncio.to_thread(_get_dir_size_mb, AUDIO_RENDERING_ROOT)
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        job_count = conn.execute("SELECT COUNT(*) FROM subtitle_jobs").fetchone()[0]
+    finally:
+        conn.close()
+
+    # Count audio folders on disk
+    audio_folders = list(AUDIO_RENDERING_ROOT.iterdir()) if AUDIO_RENDERING_ROOT.exists() else []
+    audio_folder_count = sum(1 for f in audio_folders if f.is_dir())
+
+    return {
+        "db_size_mb": db_size_mb,
+        "job_count": job_count,
+        "audio_size_mb": audio_size_mb,
+        "audio_folder_count": audio_folder_count,
+    }
+
+
+@router.post("/maintenance/vacuum")
+async def vacuum_database():
+    """
+    Runs SQLite VACUUM to reclaim disk space after deletions.
+    Returns DB size before and after.
+    """
+    import sqlite3
+
+    if not DB_PATH.exists():
+        raise HTTPException(status_code=404, detail="Database not found")
+
+    size_before_mb = round(DB_PATH.stat().st_size / (1024 * 1024), 2)
+
+    def _vacuum():
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute("VACUUM")
+            conn.commit()
+        finally:
+            conn.close()
+
+    await asyncio.to_thread(_vacuum)
+
+    size_after_mb = round(DB_PATH.stat().st_size / (1024 * 1024), 2)
+    saved_mb = round(size_before_mb - size_after_mb, 2)
+
+    return {
+        "size_before_mb": size_before_mb,
+        "size_after_mb": size_after_mb,
+        "saved_mb": saved_mb,
+    }
+
+
+def _find_orphan_folders() -> list[dict]:
+    """
+    Returns audio folders that have no corresponding job in the DB.
+    Expected folder naming: {slug}_{job_id}
+    """
+    if not AUDIO_RENDERING_ROOT.exists():
+        return []
+
+    # Collect all existing job IDs
+    jobs, _ = get_all_jobs(limit=10000, offset=0)
+    existing_ids = {job.id for job in jobs}
+
+    orphans = []
+    for folder in AUDIO_RENDERING_ROOT.iterdir():
+        if not folder.is_dir():
+            continue
+        # Extract job_id from last "_<number>" suffix
+        name = folder.name
+        parts = name.rsplit("_", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            job_id = int(parts[1])
+            if job_id not in existing_ids:
+                size_mb = round(
+                    sum(f.stat().st_size for f in folder.rglob("*") if f.is_file()) / (1024 * 1024),
+                    2
+                )
+                orphans.append({"folder": name, "job_id": job_id, "size_mb": size_mb})
+        else:
+            # Folder doesn't match naming convention — list as unknown orphan
+            size_mb = round(
+                sum(f.stat().st_size for f in folder.rglob("*") if f.is_file()) / (1024 * 1024),
+                2
+            )
+            orphans.append({"folder": name, "job_id": None, "size_mb": size_mb})
+
+    return orphans
+
+
+@router.get("/maintenance/orphan-audio")
+async def list_orphan_audio():
+    """
+    Lists audio folders in data/audio-rendering/ that have no corresponding job in the DB.
+    """
+    orphans = await asyncio.to_thread(_find_orphan_folders)
+    total_mb = round(sum(o["size_mb"] for o in orphans), 2)
+    return {"orphans": orphans, "total_mb": total_mb}
+
+
+@router.delete("/maintenance/orphan-audio")
+async def delete_orphan_audio():
+    """
+    Deletes all orphaned audio folders (those without a corresponding job).
+    Returns the list of deleted folders and total space freed.
+    """
+    orphans = await asyncio.to_thread(_find_orphan_folders)
+
+    deleted = []
+    errors = []
+    for orphan in orphans:
+        folder_path = AUDIO_RENDERING_ROOT / orphan["folder"]
+        try:
+            shutil.rmtree(folder_path)
+            deleted.append(orphan)
+        except Exception as e:
+            errors.append({"folder": orphan["folder"], "error": str(e)})
+
+    total_freed_mb = round(sum(o["size_mb"] for o in deleted), 2)
+    return {"deleted": deleted, "errors": errors, "total_freed_mb": total_freed_mb}

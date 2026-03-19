@@ -50,6 +50,7 @@ if not exist "data\\model" mkdir data\\model
 if not exist "data\\model-translation" mkdir data\\model-translation
 if not exist "data\\voices" mkdir data\\voices
 if not exist "data\\outputs" mkdir data\\outputs
+if not exist "data\\audio-rendering" mkdir data\\audio-rendering
 
 :: Step 5: Frontend Setup
 echo.

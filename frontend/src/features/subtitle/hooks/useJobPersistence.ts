@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useJobArchive } from '../../../hooks/useJobArchive';
 import type { Job } from '../../../hooks/useJobArchive';
 
@@ -16,14 +16,14 @@ export const useJobPersistence = () => {
     const [loadedJobId, setLoadedJobId] = useState<number | null>(null);
     const { saveJobDraft: saveJobAction, updateJob: updateJobAction } = useJobArchive();
 
-    const updateJob = async (jobId: number, updateData: Record<string, unknown>): Promise<Job | null> => {
+    const updateJob = useCallback(async (jobId: number, updateData: Record<string, unknown>): Promise<Job | null> => {
         return await updateJobAction(jobId, updateData);
-    };
+    }, [updateJobAction]);
 
     return {
         loadedJobId,
         setLoadedJobId,
         saveJobAction,
-        updateJob,
+        updateJob
     };
 };

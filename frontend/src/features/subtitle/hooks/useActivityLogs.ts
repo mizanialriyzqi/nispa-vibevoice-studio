@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 /**
@@ -13,17 +13,17 @@ export const useActivityLogs = () => {
     const [showLogsModal, setShowLogsModal] = useState(false);
     const lastLogRef = useRef<string>('');
 
-    const addLog = (message: string) => {
+    const addLog = useCallback((message: string) => {
         if (message === lastLogRef.current) return;
         lastLogRef.current = message;
         const timestamp = new Date().toLocaleTimeString();
         setActivityLogs(prev => [...prev, `[${timestamp}] ${message}`]);
-    };
+    }, []);
 
-    const clearLogs = () => {
+    const clearLogs = useCallback(() => {
         setActivityLogs([]);
         lastLogRef.current = '';
-    };
+    }, []);
 
     return {
         activityLogs,

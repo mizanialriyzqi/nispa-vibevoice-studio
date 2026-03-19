@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
 /**
  * Hook that encapsulates the numeric progress state for subtitle generation,
@@ -13,15 +13,15 @@ export const useGenerationProgress = () => {
     const [estimatedTime, setEstimatedTime] = useState('--:--');
     const startTimeRef = useRef<number>(0);
 
-    const recordStartTime = () => {
+    const recordStartTime = useCallback(() => {
         startTimeRef.current = Date.now();
-    };
+    }, []);
 
     /**
      * Updates item-level progress and computes the ETA string.
      * Call this for each SSE progress event that includes item counts.
      */
-    const updateItemProgress = (current: number, total: number) => {
+    const updateItemProgress = useCallback((current: number, total: number) => {
         setTotalItems(total);
         setCurrentItems(current);
         setGenerationProgress((current / total) * 100);
@@ -37,15 +37,15 @@ export const useGenerationProgress = () => {
         } else if (remaining === 0) {
             setEstimatedTime('0:00');
         }
-    };
+    }, []);
 
-    const resetProgress = () => {
+    const resetProgress = useCallback(() => {
         setGenerationProgress(0);
         setTotalItems(0);
         setCurrentItems(0);
         setEstimatedTime('--:--');
         startTimeRef.current = 0;
-    };
+    }, []);
 
     return {
         generationProgress,

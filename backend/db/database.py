@@ -28,10 +28,17 @@ def init_db():
             audio_url TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            status TEXT DEFAULT 'draft'  -- draft, processing, completed, failed
+            status TEXT DEFAULT 'draft',  -- draft, processing, completed, failed
+            language TEXT
         )
     ''')
-    
+
+    # Migration: add language column to existing databases that don't have it
+    try:
+        cursor.execute('ALTER TABLE subtitle_jobs ADD COLUMN language TEXT')
+    except Exception:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
 
@@ -60,8 +67,8 @@ def create_job(job_data: JobCreate) -> JobResponse:
             INSERT INTO subtitle_jobs (
                 original_filename, subtitle_segments, modified_segments,
                 voice_id, voice_name, model_name, group_by_punctuation,
-                notes, created_at, updated_at, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                notes, created_at, updated_at, status, language
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             job_data.original_filename,
             serialize_segments(job_data.subtitle_segments),
@@ -73,7 +80,8 @@ def create_job(job_data: JobCreate) -> JobResponse:
             job_data.notes,
             now,
             now,
-            'draft'
+            'draft',
+            job_data.language,
         ))
         
         job_id = cursor.lastrowid
@@ -111,7 +119,7 @@ def get_job(job_id: int) -> Optional[JobResponse]:
 
 def get_all_jobs(limit: int = 50, offset: int = 0) -> Tuple[List[JobResponse], int]:
     """
-    Retrieves a paginated list of all jobs.
+    Retrieves a paginated list of all jobs including their segments.
 
     Args:
         limit (int, optional): Maximum number of jobs to return. Defaults to 50.
@@ -122,18 +130,18 @@ def get_all_jobs(limit: int = 50, offset: int = 0) -> Tuple[List[JobResponse], i
     """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
+
     cursor.execute('SELECT COUNT(*) FROM subtitle_jobs')
     total = cursor.fetchone()[0]
-    
+
     cursor.execute('''
-        SELECT * FROM subtitle_jobs 
+        SELECT * FROM subtitle_jobs
         ORDER BY created_at DESC
         LIMIT ? OFFSET ?
     ''', (limit, offset))
     rows = cursor.fetchall()
     conn.close()
-    
+
     jobs = [_row_to_job(row) for row in rows]
     return jobs, total
 
@@ -161,7 +169,19 @@ def update_job(job_id: int, update_data: JobUpdate) -> JobResponse:
     if update_data.notes is not None:
         updates.append('notes = ?')
         params.append(update_data.notes)
-    
+
+    if update_data.language is not None:
+        updates.append('language = ?')
+        params.append(update_data.language)
+
+    if update_data.voice_id is not None:
+        updates.append('voice_id = ?')
+        params.append(update_data.voice_id)
+
+    if update_data.model_name is not None:
+        updates.append('model_name = ?')
+        params.append(update_data.model_name)
+
     if updates:
         updates.append('updated_at = ?')
         params.append(datetime.now().isoformat())
@@ -255,5 +275,6 @@ def _row_to_job(row: tuple) -> JobResponse:
         audio_url=row[9],
         created_at=row[10],
         updated_at=row[11],
-        status=row[12]
+        status=row[12],
+        language=row[13] if len(row) > 13 else None,
     )

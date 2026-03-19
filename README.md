@@ -29,9 +29,9 @@
 
 ---
 
-## 🌟 Why Nispa?
+## 🌟 Why Nispa VibeVoice Studio?
 
-Most AI voiceover tools send your data to remote APIs. Nispa runs **entirely on your machine** — no cloud, no API keys, no data leaves your computer. You get:
+Most AI voiceover tools send your data to remote APIs. Nispa VibeVoice Studio runs **entirely on your machine** — no cloud, no API keys, no data leaves your computer. You get:
 
 - **Zero latency** — Direct GPU inference, no network round-trips
 - **Total privacy** — Your scripts, subtitles, and audio never leave your hardware
@@ -62,7 +62,7 @@ Audio segments are saved to a local SQLite database **the instant they are gener
 
 ### 🌍 200+ Language Translation
 - **NLLB-200** (built-in): Facebook's offline translation engine for 200+ languages including regional dialects
-- **Ollama Integration**: Optionally use LLMs (Llama 3, Mistral, etc.) for contextual translations
+- **Ollama Integration**: huihui_ai/hy-mt1.5-abliterated:7b for more advanced translation (but slower), or you can use any LLM for translation
 
 ### 🎬 Two Workflow Modes
 - **Subtitle Mode**: Upload `.srt`/`.vtt` → translate → generate timed voiceover → export aligned audio
@@ -88,8 +88,8 @@ Audio segments are saved to a local SQLite database **the instant they are gener
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/nicola-spada/nispa-voiceover.git
-cd nispa-voiceover
+git clone https://github.com/nispa/nispa-vibevoice-studio.git
+cd nispa-vibevoice-studio
 
 # 2. Run the installer
 # Windows:
@@ -263,7 +263,6 @@ cd frontend && npm run dev
 ## 📋 Roadmap
 
 - [ ] Web-based voice recording directly in the browser
-- [ ] Batch export with custom naming patterns
 - [ ] Timeline editor with visual waveform alignment
 - [ ] Plugin system for custom TTS providers
 - [ ] Docker containerization for one-click deployment
@@ -297,5 +296,5 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 ---
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/nicola-spada">Nicola Spada</a>
+  Made with ❤️ by <a href="https://github.com/nispa">Nicola Spada</a>
 </p>

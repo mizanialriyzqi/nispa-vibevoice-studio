@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 
 /**
@@ -44,6 +44,9 @@ const ScriptContext = createContext<ScriptContextProps | undefined>(undefined);
  * @param {ReactNode} props.children - Child components to be wrapped.
  */
 export const ScriptProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    // [DEBUG] Monitor context provider renders
+    console.count('Render ScriptProvider');
+
     const [scriptFile, setScriptFile] = useState<File | null>(null);
     const [scriptText, setScriptText] = useState<string>('');
     const [speakers, setSpeakers] = useState<Speaker[]>([
@@ -70,17 +73,28 @@ export const ScriptProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [detectedSpeakers]);
 
+    const contextValue = useMemo(() => ({
+        scriptFile, setScriptFile,
+        scriptText, setScriptText,
+        speakers, setSpeakers,
+        detectedSpeakers, setDetectedSpeakers,
+        selectedModel, setSelectedModel,
+        selectedLanguage, setSelectedLanguage,
+        voiceDescription, setVoiceDescription,
+        errorMsg, setErrorMsg
+    }), [
+        scriptFile,
+        scriptText,
+        speakers,
+        detectedSpeakers,
+        selectedModel,
+        selectedLanguage,
+        voiceDescription,
+        errorMsg
+    ]);
+
     return (
-        <ScriptContext.Provider value={{
-            scriptFile, setScriptFile,
-            scriptText, setScriptText,
-            speakers, setSpeakers,
-            detectedSpeakers, setDetectedSpeakers,
-            selectedModel, setSelectedModel,
-            selectedLanguage, setSelectedLanguage,
-            voiceDescription, setVoiceDescription,
-            errorMsg, setErrorMsg
-        }}>
+        <ScriptContext.Provider value={contextValue}>
             {children}
         </ScriptContext.Provider>
     );

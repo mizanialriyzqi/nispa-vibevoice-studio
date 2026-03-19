@@ -187,16 +187,29 @@ async def generate_single_segment(
     voice_id: str = Form(...),
     model_name: str = Form("VibeVoice-1.5B"),
     voice_description: Optional[str] = Form(None),
-    language: Optional[str] = Form(None)
+    language: Optional[str] = Form(None),
+    job_id: Optional[int] = Form(None),
+    segment_index: Optional[int] = Form(None),
+    original_filename: Optional[str] = Form(None),
 ):
-    """Generates audio for a single text segment."""
+    """Generates audio for a single text segment.
+
+    If job_id, segment_index and original_filename are provided, saves the audio
+    to disk and returns the file path alongside the base64 (for immediate playback).
+    """
     try:
         import base64
         wav_bytes = await asyncio.to_thread(
             tts_engine.synthesize, text, model_name, None, voice_id, voice_description, language
         )
         audio_b64 = base64.b64encode(wav_bytes).decode('utf-8')
-        return {"audio_base64": audio_b64}
+
+        audio_path: Optional[str] = None
+        if job_id is not None and segment_index is not None and original_filename:
+            from core.audio_storage import save_segment_audio
+            audio_path = save_segment_audio(original_filename, job_id, segment_index, wav_bytes)
+
+        return {"audio_base64": audio_b64, "audio_path": audio_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {str(e)}")
 

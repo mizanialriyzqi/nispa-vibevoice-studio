@@ -22,34 +22,23 @@ Stack: React 19 + Vite + TypeScript + Tailwind (frontend) | FastAPI + SQLite + P
 | Hook principali | `frontend/src/hooks/` (useJobArchive, useScriptGeneration, useSystemInfo) |
 | API backend | `backend/api/routers/` (tasks, jobs, translation, generation) |
 | TTS engines | `backend/core/tts/` (qwen_provider, vibe_provider, tts_provider) |
-| Piano refactoring frontend | `REFACTORING_PLAN.md` (root) |
-| Piano refactoring backend | `BACKEND_REFACTORING_PLAN.md` (root) |
-| Stato task frontend | `REFACTORING_CHECKLIST.md` (root) |
 | Documentazione tecnica | `TECHNICAL_DOCUMENTATION.md` |
 | API reference | `API_REFERENCE.md` |
 
 ## Attenzione: Bug Attivi
 
-Prima di modificare questi file, correggi i bug noti:
-
-1. **`useTranslationLoop.ts` L111-112** — I setter React sono usati come argomenti di altri setter. Ritornano `void`, non il valore.
-2. **`GenerationControls.tsx` L277** — `subtitleFile.name` acceduto senza null-check in callback asincrono.
-3. **`AudioWaveformPlayer.tsx` L71** — `AudioContext` creato senza cleanup (memory leak).
-4. **`JobReviewModal.tsx` L77-101** — `URL.createObjectURL` ad ogni render senza `revokeObjectURL`.
-5. **`SubtitleContext.tsx` L129/L372** — `useJobArchive()` istanziato due volte.
-
 ### Backend
-6. **`translator.py` L71** — `dtype` usato invece di `torch_dtype` (parametro ignorato silenziosamente)
-7. **`tasks.py` L272/L371** — Bare `except: pass` nasconde errori di I/O
-8. **`database.py`** — Connessioni SQLite senza context manager (possibile leak)
-9. **`main.py` L28** — `@app.on_event("startup")` è deprecato in FastAPI moderno
+1. **`translator.py` L71** — `dtype` usato invece di `torch_dtype` (parametro ignorato silenziosamente)
+2. **`tasks.py` L272/L371** — Bare `except: pass` nasconde errori di I/O
+3. **`database.py`** — Connessioni SQLite senza context manager (possibile leak)
+4. **`main.py` L28** — `@app.on_event("startup")` è deprecato in FastAPI moderno
 
 ## Pattern del Progetto
 
 ### Frontend
 - **Context API** per state management (no Redux/Zustand)
 - **SSE (Server-Sent Events)** per progress real-time della generazione
-- **Blob URL** per audio playback da base64
+- **File-based audio** — i segmenti vengono salvati come WAV in `data/audio-rendering/{slug}_{id}/` e serviti via HTTP; `audioUrl` nel DB è un path relativo convertito con `filePathToHttpUrl()`
 - **Incremental save** — il backend salva ogni segmento audio appena generato
 
 ### Backend

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Download, Copy, Trash2, Music } from 'lucide-react';
 import type { Job } from '../../hooks/useJobArchive';
 import { AudioWaveformPlayer } from '../ui/AudioWaveformPlayer';
@@ -40,20 +40,20 @@ const getStatusColor = (status: string) => {
     }
 };
 
-export const JobTableRow: React.FC<JobTableRowProps> = ({
+export const JobTableRow = memo(({
     job,
     isExpanded,
     onToggleExpand,
     onDelete,
     onLoad,
     onDownloadSrt
-}) => {
-    const isTranslated = job.modified_segments.some(s => s.is_translated) || 
-                         job.subtitle_segments.some(s => s.is_translated) ||
+}: JobTableRowProps) => {
+    const isTranslated = job.modified_segments?.some(s => s.is_translated) ||
+                         job.subtitle_segments?.some(s => s.is_translated) ||
                          job.notes?.toLowerCase().includes('translation');
 
-    const hasAudio = job.modified_segments.some(s => s.audioBase64 || s.audioUrl?.startsWith('data:audio/')) ||
-                     job.subtitle_segments.some(s => s.audioBase64 || s.audioUrl?.startsWith('data:audio/'));
+    const hasAudio = job.modified_segments?.some(s => s.audioUrl?.startsWith('data:audio/') || s.audioUrl?.startsWith('data/audio-rendering/')) ||
+                     job.subtitle_segments?.some(s => s.audioUrl?.startsWith('data:audio/') || s.audioUrl?.startsWith('data/audio-rendering/'));
 
     return (
         <div className="bg-slate-800/40 border border-slate-700/30 rounded-lg overflow-hidden">
@@ -157,21 +157,40 @@ export const JobTableRow: React.FC<JobTableRowProps> = ({
 
                     <div>
                         <p className="text-xs text-slate-500 mb-2">
-                            Modified Segments ({job.modified_segments.length})
+                            Modified Segments {job.modified_segments ? `(${job.modified_segments.length})` : ''}
                         </p>
                         <div className="max-h-[200px] overflow-auto space-y-2">
-                            {job.modified_segments.slice(0, 5).map((seg) => (
-                                <div key={seg.index} className="bg-slate-800/60 p-2 rounded text-xs">
-                                    <p className="text-slate-400 font-mono">
-                                        [{seg.index}] ({formatTime(seg.start_ms)} → {formatTime(seg.end_ms)})
+                            {job.modified_segments ? (
+                                <>
+                                    {job.modified_segments.slice(0, 5).map((seg) => (
+                                        <div key={seg.index} className="bg-slate-800/60 p-2 rounded text-xs">
+                                            <p className="text-slate-400 font-mono">
+                                                [{seg.index}] ({formatTime(seg.start_ms)} → {formatTime(seg.end_ms)})
+                                            </p>
+                                            <p className="text-slate-300 mt-1">{seg.text}</p>
+                                        </div>
+                                    ))}
+                                    {job.modified_segments.length > 5 && (
+                                        <p className="text-slate-500 text-xs italic">
+                                            ... and {job.modified_segments.length - 5} more
+                                        </p>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="p-4 border border-dashed border-slate-700 rounded text-center">
+                                    <p className="text-slate-500 text-xs italic mb-2">
+                                        Segments details are not loaded in the list view to improve performance.
                                     </p>
-                                    <p className="text-slate-300 mt-1">{seg.text}</p>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onLoad(job);
+                                        }}
+                                        className="text-[10px] px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-md border border-indigo-500/30 transition-colors uppercase font-bold tracking-wider"
+                                    >
+                                        Load into Editor to see all
+                                    </button>
                                 </div>
-                            ))}
-                            {job.modified_segments.length > 5 && (
-                                <p className="text-slate-500 text-xs italic">
-                                    ... and {job.modified_segments.length - 5} more
-                                </p>
                             )}
                         </div>
                     </div>
@@ -191,4 +210,6 @@ export const JobTableRow: React.FC<JobTableRowProps> = ({
             )}
         </div>
     );
-};
+});
+
+JobTableRow.displayName = 'JobTableRow';

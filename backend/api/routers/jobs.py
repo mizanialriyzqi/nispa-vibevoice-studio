@@ -7,11 +7,12 @@ import asyncio
 
 from db.models import JobCreate, JobUpdate, JobResponse, JobListResponse
 from db.database import (
-    create_job, get_job, get_all_jobs, update_job, 
+    create_job, get_job, get_all_jobs, update_job,
     delete_job, update_job_status
 )
 from core.parser import SubtitleSegment
 from core.aligner import align_subtitles_audio
+from core.audio_storage import load_segment_audio, is_file_path
 
 router = APIRouter(prefix="/api/jobs")
 
@@ -44,29 +45,31 @@ async def finalize_job_audio(job_id: int, output_format: str = Query("mp3")):
     segments_with_audio = []
     
     for seg in segments:
-        audio_url = getattr(seg, "audioUrl", None) or seg.get("audioUrl") if isinstance(seg, dict) else seg.audioUrl
-        
-        if not audio_url or not audio_url.startswith("data:audio/"):
-            # If a segment is missing audio, we can't finalize properly
+        audio_url = seg.get("audioUrl") if isinstance(seg, dict) else getattr(seg, "audioUrl", None)
+
+        if not audio_url:
             continue
-            
+
         try:
-            # Extract base64 data
-            b64_data = audio_url.split(",")[1]
-            wav_bytes = base64.b64decode(b64_data)
-            
-            # Map database model to SubtitleSegment expected by aligner
+            if is_file_path(audio_url):
+                wav_bytes = load_segment_audio(audio_url)
+            elif audio_url.startswith("data:audio/"):
+                b64_data = audio_url.split(",")[1]
+                wav_bytes = base64.b64decode(b64_data)
+            else:
+                continue
+
             segments_with_audio.append((
                 SubtitleSegment(
-                    index=getattr(seg, "index", 0),
-                    start_time_ms=getattr(seg, "start_ms", 0),
-                    end_time_ms=getattr(seg, "end_ms", 0),
-                    text=getattr(seg, "text", "")
+                    index=getattr(seg, "index", 0) if not isinstance(seg, dict) else seg.get("index", 0),
+                    start_time_ms=getattr(seg, "start_ms", 0) if not isinstance(seg, dict) else seg.get("start_ms", 0),
+                    end_time_ms=getattr(seg, "end_ms", 0) if not isinstance(seg, dict) else seg.get("end_ms", 0),
+                    text=getattr(seg, "text", "") if not isinstance(seg, dict) else seg.get("text", "")
                 ),
                 wav_bytes
             ))
         except Exception as e:
-            print(f"Error decoding audio for segment {getattr(seg, 'index', 'unknown')}: {e}")
+            print(f"Error loading audio for segment {getattr(seg, 'index', seg.get('index', 'unknown') if isinstance(seg, dict) else 'unknown')}: {e}")
             continue
             
     if not segments_with_audio:

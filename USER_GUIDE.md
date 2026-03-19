@@ -1,4 +1,4 @@
-# User Guide - Nispa VibeVoice Studio (v0.5.0)
+# User Guide - Nispa VibeVoice Studio (v0.6.0)
 
 Welcome to **Nispa VibeVoice Studio**. This guide covers the dual-engine architecture (**VibeVoice** and **Qwen3-TTS**) to generate high-quality synthesized voices with advanced cloning, batching, and design capabilities.
 
@@ -26,8 +26,7 @@ Use the integrated tool to fetch official weights from Hugging Face:
 - **Windows**: `venv\Scripts\python backend\scripts\download_model.py`
 
 ### Dynamic Batching & VRAM Management
-The engine automatically queries your GPU's VRAM in real-time. 
-If you have a powerful GPU (like an RTX 4090), the system will automatically process up to 8 segments in parallel, drastically reducing generation time. If you have a smaller GPU, it scales down gracefully to prevent crashes.
+The engine re-queries your GPU's free VRAM before every single batch — not just at startup. After each batch, GPU memory is explicitly flushed before the next one begins. If you have a powerful GPU (like an RTX 4090), the system will automatically process up to 8 segments in parallel, drastically reducing generation time. If you have a smaller GPU, it scales down gracefully to prevent crashes.
 
 ### Resource Requirements (VRAM)
 
@@ -53,12 +52,12 @@ Click **Edit Subtitles** to manually adjust the translated text or tweak the Sta
 
 ### Step 3: Generation & Real-time Persistence
 1.  Select a Voice and a Model.
-2.  Click **Generate Voice-over**. 
-3.  **Zero Data Loss:** The system now saves every single generated audio segment directly to the database in real-time. If you close the browser or hit "Cancel," your progress is 100% saved and can be instantly resumed later from the Job Archive.
+2.  Click **Generate Voice-over**.
+3.  **Zero Data Loss:** Every generated segment is saved immediately as a WAV file under `data/audio-rendering/`. The database stores only the file path — no more heavy base64 blobs. If you close the browser or hit "Cancel," your progress is 100% safe and instantly resumable from the Job Archive.
 
 ---
 
-## 4. Audio Review & Finalization (New in v0.6.0)
+## 4. Audio Review & Finalization
 
 Once generation is complete (or even partially complete), you can access the **Job Audio Gallery** by clicking the **Review Audio** button.
 
@@ -66,7 +65,7 @@ Once generation is complete (or even partially complete), you can access the **J
 If a specific segment sounds wrong:
 1. Find it in the Paginated Review Modal.
 2. Click the **Regenerate** button (circular arrows) next to the waveform.
-3. The system perfectly recalls the specific Voice, Model, and Language used for that line and resynthesizes *only* that segment instantly.
+3. The system recalls the exact Voice, Model, and Language used for that line, resynthesizes it, saves the new WAV to disk, and updates the database reference instantly.
 
 ### Audio Trimmer
 If a segment has "hallucinations" (unwanted noise at the end):

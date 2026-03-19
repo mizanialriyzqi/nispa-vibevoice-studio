@@ -1,6 +1,7 @@
 import { useSubtitleContext } from '../context/SubtitleContext';
 import { useTranslationContext } from '../context/TranslationContext';
 import { translationApi } from '../../../services/translationApi';
+import { showToast } from '../../../utils/uiEvents';
 
 /**
  * Custom hook that implements the main translation loop for subtitle segments.
@@ -131,7 +132,7 @@ export const useTranslationLoop = () => {
             saveJobDraft(`Fully translated to ${targetCode} (Offline)`, updatedSegments, newFilename);
             
             setTimeout(() => {
-                alert(`Translation to ${targetCode} complete! Saved to Job Archive.`);
+                showToast(`Translation to ${targetCode} complete! Saved to Job Archive.`, 'success');
                 setIsTranslating(false);
             }, 500);
 
@@ -139,7 +140,7 @@ export const useTranslationLoop = () => {
             console.error(e);
             addTransLog(`✗ Error during translation: ${String(e)}`);
             setIsTranslating(false);
-            alert(`Translation error: ${String(e)}`);
+            showToast(`Translation error: ${String(e)}`, 'error');
         }
     };
 

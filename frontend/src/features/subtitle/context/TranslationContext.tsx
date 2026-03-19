@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { ReactNode, MutableRefObject, Dispatch, SetStateAction, FC } from 'react';
 import { translationApi } from '../../../services/translationApi';
 
@@ -81,7 +81,7 @@ export const TranslationProvider: FC<{ children: ReactNode }> = ({ children }) =
     /**
      * Fetches available translation models from the backend.
      */
-    const refreshOllamaModels = async () => {
+    const refreshOllamaModels = useCallback(async () => {
         setIsLoadingModels(true);
         try {
             const data = await translationApi.getOllamaModels();
@@ -94,31 +94,53 @@ export const TranslationProvider: FC<{ children: ReactNode }> = ({ children }) =
         } finally {
             setIsLoadingModels(false);
         }
-    };
-
-    useEffect(() => {
-        refreshOllamaModels();
     }, []);
 
+    useEffect(() => {
+        if (!hasStartedTranslation) {
+            refreshOllamaModels();
+        }
+    }, [refreshOllamaModels, hasStartedTranslation]);
+
+    const contextValue = useMemo(() => ({
+        sourceLanguage, setSourceLanguage,
+        targetLanguage, setTargetLanguage,
+        ollamaModels, selectedOllamaModel, setSelectedOllamaModel,
+        isTranslating, setIsTranslating,
+        isPausedRef,
+        translationProgress, setTranslationProgress,
+        showTranslationModal, setShowTranslationModal,
+        translationLogs, setTranslationLogs,
+        currentOriginalText, setCurrentOriginalText,
+        currentTranslatedText, setCurrentTranslatedText,
+        previousOriginalText, setPreviousOriginalText,
+        previousTranslatedText, setPreviousTranslatedText,
+        estimatedTimeRemaining, setEstimatedTimeRemaining,
+        isPausing, setIsPausing,
+        hasStartedTranslation, setHasStartedTranslation,
+        refreshOllamaModels, isLoadingModels
+    }), [
+        sourceLanguage,
+        targetLanguage,
+        ollamaModels,
+        selectedOllamaModel,
+        isTranslating,
+        translationProgress,
+        showTranslationModal,
+        translationLogs,
+        currentOriginalText,
+        currentTranslatedText,
+        previousOriginalText,
+        previousTranslatedText,
+        estimatedTimeRemaining,
+        isPausing,
+        hasStartedTranslation,
+        refreshOllamaModels,
+        isLoadingModels
+    ]);
+
     return (
-        <TranslationContext.Provider value={{
-            sourceLanguage, setSourceLanguage,
-            targetLanguage, setTargetLanguage,
-            ollamaModels, selectedOllamaModel, setSelectedOllamaModel,
-            isTranslating, setIsTranslating,
-            isPausedRef,
-            translationProgress, setTranslationProgress,
-            showTranslationModal, setShowTranslationModal,
-            translationLogs, setTranslationLogs,
-            currentOriginalText, setCurrentOriginalText,
-            currentTranslatedText, setCurrentTranslatedText,
-            previousOriginalText, setPreviousOriginalText,
-            previousTranslatedText, setPreviousTranslatedText,
-            estimatedTimeRemaining, setEstimatedTimeRemaining,
-            isPausing, setIsPausing,
-            hasStartedTranslation, setHasStartedTranslation,
-            refreshOllamaModels, isLoadingModels
-        }}>
+        <TranslationContext.Provider value={contextValue}>
             {children}
         </TranslationContext.Provider>
     );

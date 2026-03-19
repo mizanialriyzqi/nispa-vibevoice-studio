@@ -74,7 +74,7 @@ class Qwen3TTSProvider(TTSProvider):
             # Use flash_attention_2 if on CUDA, otherwise fallback to sdpa
             try:
                 self.model = Qwen3TTSModel.from_pretrained(
-                    model_dir, 
+                    model_dir,
                     dtype=self.dtype,
                     device_map={"": target_device} if self.device == "cuda" else None,
                     attn_implementation="flash_attention_2" if self.device == "cuda" else "sdpa"
@@ -82,10 +82,10 @@ class Qwen3TTSProvider(TTSProvider):
             except Exception as e:
                 print(f"[Qwen-TTS] Flash Attention 2 failed or not supported, falling back to sdpa: {e}")
                 self.model = Qwen3TTSModel.from_pretrained(
-                    model_dir, 
+                    model_dir,
                     dtype=self.dtype,
                     device_map={"": target_device} if self.device == "cuda" else None,
-                    attn_implementation="sdpa" 
+                    attn_implementation="sdpa"
                 )
 
             # Suppress pad_token_id warnings
@@ -304,13 +304,16 @@ class Qwen3TTSProvider(TTSProvider):
                     audio_tensor = torch.from_numpy(audio_data).float()
                 else:
                     audio_tensor = audio_data.detach().cpu().float()
+                # Free the GPU tensor immediately after moving to CPU
+                del audio_data
 
                 if audio_tensor.dim() == 1:
                     audio_tensor = audio_tensor.unsqueeze(0)
-                
+
                 torchaudio.save(buf, audio_tensor, sr, format="wav")
+                del audio_tensor
                 result_bytes.append(buf.getvalue())
-                
+
             return result_bytes
 
         except Exception as e:

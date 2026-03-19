@@ -1,21 +1,36 @@
+import os
 import uvicorn
 import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 # Import routers (minimal impact because routers themselves use lazy imports now)
 from api.routers import system, voices, generation, jobs, translation, tasks
 
 app = FastAPI(title="Nispa Voiceover API")
 
+_audio_rendering_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "audio-rendering"))
+os.makedirs(_audio_rendering_dir, exist_ok=True)
+
 # Configure CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all for local dev, or specify origins
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/audio-files/{job_folder}/{filename}")
+async def serve_audio_file(job_folder: str, filename: str):
+    """Serves generated segment audio files with proper CORS headers."""
+    if ".." in job_folder or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    file_path = os.path.join(_audio_rendering_dir, job_folder, filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(file_path, media_type="audio/wav")
 
 # Register API routers
 app.include_router(system.router)

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Segment } from './types';
 import { parseTimeToMs } from './utils';
 import { ttsApi } from '../../../../services/ttsApi';
+import { showToast } from '../../../../utils/uiEvents';
 
 export const useSubtitleEditor = (initialSegments: Segment[], onSegmentsSave: (segments: Segment[]) => void, onClose: () => void) => {
     const [segments, setSegments] = useState<Segment[]>(initialSegments);
@@ -77,7 +78,7 @@ export const useSubtitleEditor = (initialSegments: Segment[], onSegmentsSave: (s
     const handleFinalizeAudio = async () => {
         const approvedSegments = segments.filter(s => s.isApproved && s.audioUrl);
         if (approvedSegments.length === 0) {
-            alert("No verified segments to join. Please generate and verify audio for segments first.");
+            showToast("No verified segments to join. Please generate and verify audio for segments first.", 'info');
             return;
         }
 
@@ -99,11 +100,11 @@ export const useSubtitleEditor = (initialSegments: Segment[], onSegmentsSave: (s
                 a.download = `final_voiceover_${new Date().getTime()}.mp3`;
                 a.click();
                 
-                alert(`Successfully joined ${approvedSegments.length} segments!`);
+                showToast(`Successfully joined ${approvedSegments.length} segments!`, 'success');
             }
         } catch (err) {
             console.error(err);
-            alert("Failed to finalize audio.");
+            showToast("Failed to finalize audio.", 'error');
         } finally {
             setIsFinalizing(true); // Keep success state or reset? Resetting for now.
             setIsFinalizing(false);

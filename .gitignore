@@ -62,35 +62,36 @@ frontend/node_modules/
 frontend/dist/
 frontend/build/
 
-# Node
+# Node logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # OS specific
 Thumbs.db
-.DS_Store
 
 # Large ML model files
-data/model-translation/*
 data/model/*
+data/model-translation/*
 
 # Database
 backend/jobs.db
 
 # Voice data
 data/voices/*
-*.wav
-*.mp3
-*.flac
 
-# Logs
+# Audio files (data directory only)
+data/**/*.wav
+data/**/*.mp3
+data/**/*.flac
+
+# Generated segment audio files
+data/audio-rendering/*
+
+# Temp files
 *.log
 logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 *.tmp
 *.temp

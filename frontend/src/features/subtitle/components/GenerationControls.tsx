@@ -9,6 +9,7 @@ import type { SubtitleSegment } from '../context/SubtitleContext';
 import { useGlobalContext } from '../../../context/GlobalContext';
 import { ttsApi } from '../../../services/ttsApi';
 import { base64ToBlobUrl } from '../../../utils/audio';
+import { showConfirm } from '../../../utils/uiEvents';
 import type { SseMessage, SseNewSegment } from '../../../types/sse';
 import type { GeneratedSegment } from '../../../types/generated';
 
@@ -91,7 +92,12 @@ export const GenerationControls: React.FC = () => {
 
         // CONFIRM OVERWRITE
         if (currentAudioUrl) {
-            const confirmOverwrite = window.confirm("A generated audio already exists. Starting a new generation will replace it in the current preview. (The file is already saved in the backend outputs folder). Do you want to continue?");
+            const confirmOverwrite = await showConfirm({
+                title: 'Replace existing audio?',
+                message: 'A generated audio already exists. Starting a new generation will replace the current preview. The file is already saved in the outputs folder.',
+                confirmLabel: 'Continue',
+                cancelLabel: 'Cancel',
+            });
             if (!confirmOverwrite) return;
         }
 
@@ -103,7 +109,6 @@ export const GenerationControls: React.FC = () => {
         setGeneratedSegments([]);
         setShowLogsModal(true);
         resetProgress();
-        recordStartTime();
 
         // AUTO-SAVE BEFORE GENERATION
         let currentJobId: number | null = null;
@@ -193,11 +198,11 @@ export const GenerationControls: React.FC = () => {
                     }
 
                     // Progress calculation based on current_item / total_items from backend.
-                    if (data.current_item && data.total_items) {
+                    if (data.current_item != null && data.total_items != null) {
+                        // Start the ETA clock on the first real segment
+                        if (data.current_item === 1) recordStartTime();
                         updateItemProgress(data.current_item, data.total_items);
-                        setProgress((data.current_item / data.total_items) * 100);
                     } else if (data.progress !== undefined) {
-                        // Fallback if specialized fields are missing
                         setProgress(data.progress);
                     }
                 }
@@ -256,11 +261,12 @@ export const GenerationControls: React.FC = () => {
      * Handles user request to cancel the generation task, with optional partial download.
      */
     const handleCancel = async () => {
-        const choice = window.confirm(
-            "Vuoi scaricare l'audio generato finora prima di interrompere?\n\n" +
-            "OK = Scarica audio parziale e interrompi\n" +
-            "Annulla = Interrompi senza scaricare nulla"
-        );
+        const choice = await showConfirm({
+            title: 'Cancel generation?',
+            message: 'Do you want to keep the audio generated so far, or discard everything?',
+            confirmLabel: 'Keep partial audio',
+            cancelLabel: 'Discard everything',
+        });
 
         if (eventSourceRef.current) {
             eventSourceRef.current.close();

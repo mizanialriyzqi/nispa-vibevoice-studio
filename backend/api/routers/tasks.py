@@ -4,6 +4,7 @@ import asyncio
 import re
 import os
 import base64
+import torch
 from typing import Optional, List
 import requests
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Query, Body
@@ -13,6 +14,7 @@ from core.parser import parse_subtitles, parse_script, group_subtitles_by_punctu
 from core.tts_provider import tts_engine
 from core.aligner import align_subtitles_audio, align_script_audio
 from core.queue_manager import queue_manager, TaskStatus
+from core.audio_storage import save_segment_audio, load_segment_audio, is_file_path
 from db.database import get_job, update_job
 from db.models import JobUpdate
 
@@ -53,11 +55,18 @@ async def create_subtitle_task(
                                 audio_bytes = base64.b64decode(seg.audioBase64)
                             except:
                                 pass
-                        elif getattr(seg, 'audioUrl', None) and seg.audioUrl.startswith("data:audio/"):
-                            try:
-                                audio_bytes = base64.b64decode(seg.audioUrl.split(",")[1])
-                            except:
-                                pass
+                        elif getattr(seg, 'audioUrl', None):
+                            url = seg.audioUrl
+                            if url.startswith("data:audio/"):
+                                try:
+                                    audio_bytes = base64.b64decode(url.split(",")[1])
+                                except:
+                                    pass
+                            elif is_file_path(url):
+                                try:
+                                    audio_bytes = load_segment_audio(url)
+                                except:
+                                    pass
                                 
                         job_segments.append({
                             "segment": SubtitleSegment(
@@ -88,6 +97,9 @@ async def create_subtitle_task(
                         elif audio_url and audio_url.startswith("data:audio/"):
                             try: audio_bytes = base64.b64decode(audio_url.split(",")[1])
                             except: pass
+                        elif audio_url and is_file_path(audio_url):
+                            try: audio_bytes = load_segment_audio(audio_url)
+                            except: pass
 
                         job_segments.append({
                             "segment": SubtitleSegment(
@@ -117,7 +129,6 @@ async def create_subtitle_task(
         total_items = len(job_segments)
 
         def calculate_optimal_batch_size(model_name: str) -> int:
-            import torch
             if not torch.cuda.is_available():
                 return 1 # Fallback for CPU or MPS
             try:
@@ -146,10 +157,14 @@ async def create_subtitle_task(
         print(f"[Sistema] VRAM analizzata. Batch Size dinamico impostato a: {BATCH_SIZE} per modello {model_name}")
 
         segments_with_audio = []
-        
-        for i in range(0, total_items, BATCH_SIZE):
-            batch = job_segments[i:i+BATCH_SIZE]
-            
+        current_batch_size = BATCH_SIZE
+
+        i = 0
+        while i < total_items:
+            # Recalculate batch size each iteration — VRAM may have changed
+            current_batch_size = calculate_optimal_batch_size(model_name)
+            batch = job_segments[i:i+current_batch_size]
+
             task_state = queue_manager.get_task(task_id)
             if task_state.get("status") == TaskStatus.CANCELLED:
                 if task_state.get("finalize_on_cancel"):
@@ -217,20 +232,22 @@ async def create_subtitle_task(
                     try:
                         job_record = get_job(job_id)
                         if job_record and job_record.modified_segments:
+                            audio_path = save_segment_audio(
+                                job_record.original_filename, job_id, seg.index, wav_bytes
+                            )
                             updated_segments = []
                             for s in job_record.modified_segments:
-                                # Convert to dict if it's a Pydantic model
                                 s_dict = s.dict() if hasattr(s, 'dict') else dict(s)
                                 if s_dict.get("index") == seg.index:
-                                    s_dict["audioBase64"] = seg_audio_b64
-                                    s_dict["audioUrl"] = f"data:audio/wav;base64,{seg_audio_b64}"
+                                    s_dict["audioUrl"] = audio_path
+                                    s_dict.pop("audioBase64", None)
                                     s_dict["voice_id"] = voice_id
                                     s_dict["model_name"] = model_name
                                     s_dict["language"] = language
                                 updated_segments.append(s_dict)
-                            
+
                             update_job(job_id, JobUpdate(modified_segments=updated_segments))
-                            print(f"[DB] Real-time saved segment {seg.index} for job {job_id}")
+                            print(f"[DB] Real-time saved segment {seg.index} → {audio_path}")
                     except Exception as db_e:
                         print(f"[DB] ✗ Real-time save failed for segment {seg.index}: {db_e}")
                 # -------------------------
@@ -241,7 +258,7 @@ async def create_subtitle_task(
                 queue_manager.update_task(task_id, progress=after_progress)
                 
                 yield {
-                    "progress": after_progress, 
+                    "progress": after_progress,
                     "total_items": total_items,
                     "current_item": global_idx + 1,
                     "segment_index": seg.index,
@@ -252,6 +269,14 @@ async def create_subtitle_task(
                     "language": language,
                     "message": msg
                 }
+
+            # Explicit VRAM flush between batches
+            import gc as _gc
+            _gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            i += current_batch_size
 
         yield {
             "progress": 100, 
@@ -439,7 +464,7 @@ async def stream_task_progress(task_id: str):
                 last_progress_val = progress
                 last_log_count = len(logs)
                 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.1)
 
     return StreamingResponse(
         event_generator(),

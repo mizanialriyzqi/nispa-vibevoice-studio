@@ -1,4 +1,5 @@
-import { Settings, Headphones, Mic2 } from 'lucide-react';
+import { Settings, Headphones, Mic2, Loader2 } from 'lucide-react';
+import { useGlobalContext } from '../context/GlobalContext';
 
 /**
  * Props for the AppHeader component.
@@ -24,6 +25,8 @@ interface AppHeaderProps {
  * @returns {JSX.Element} The rendered header.
  */
 export default function AppHeader({ onShowSystemInfo, onShowVoiceLibrary }: AppHeaderProps) {
+    const { isBackendReady } = useGlobalContext();
+
     return (
         <div className="w-full max-w-4xl text-center mb-10 space-y-4 relative">
             <div className="absolute top-0 right-0 flex gap-2">
@@ -42,10 +45,20 @@ export default function AppHeader({ onShowSystemInfo, onShowVoiceLibrary }: AppH
                     <Settings size={24} />
                 </button>
             </div>
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent inline-flex items-center gap-4">
-                <Headphones size={40} className="text-blue-400" />
-                VibeVoice Studio
-            </h1>
+            <div className="flex flex-col items-center gap-2">
+                <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent inline-flex items-center gap-4">
+                    <Headphones size={40} className="text-blue-400" />
+                    VibeVoice Studio
+                    {!isBackendReady && (
+                        <div className="flex items-center gap-2 ml-2" title="Connecting to backend...">
+                            <Loader2 size={24} className="text-blue-400 animate-spin" />
+                            <span className="text-xs font-bold text-blue-400/60 uppercase tracking-widest animate-pulse hidden md:inline">
+                                Syncing
+                            </span>
+                        </div>
+                    )}
+                </h1>
+            </div>
             <p className="text-slate-400 max-w-xl mx-auto text-lg leading-relaxed">
                 Generate perfectly timed Text-to-Speech audio from subtitles, or bring multi-speaker scripts to life via local zero-shot voice cloning.
             </p>

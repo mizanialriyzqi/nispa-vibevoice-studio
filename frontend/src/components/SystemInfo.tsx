@@ -1,43 +1,27 @@
-import { useEffect } from 'react';
-import { Cpu, AlertCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Cpu, Wrench, AlertCircle } from 'lucide-react';
 import { useSystemInfo } from '../hooks/useSystemInfo';
-import { CpuStats } from './system/CpuStats';
-import { GpuStats } from './system/GpuStats';
-import { SystemDetails } from './system/SystemDetails';
-import { PerformanceStatus } from './system/PerformanceStatus';
+import { SystemLog } from './system/SystemLog';
+import { MaintenanceTab } from './system/MaintenanceTab';
 
-/**
- * Props for the SystemInfo modal component.
- */
+type Tab = 'system' | 'maintenance';
+
 interface SystemInfoProps {
-    /**
-     * Whether the modal is currently visible.
-     */
     isOpen: boolean;
-    /**
-     * Callback function to close the modal.
-     */
     onClose: () => void;
 }
 
 /**
- * Modal component that displays detailed system hardware and software information.
- * 
- * Automatically fetches system statistics when opened, including GPU availability,
- * CPU usage, and library versions (PyTorch, etc.).
- * 
- * @param {SystemInfoProps} props - Component props.
- * @returns {JSX.Element | null} The rendered modal or null if not open.
+ * Modal with two tabs: System Information and Maintenance (DB vacuum, orphan cleanup).
  */
 export const SystemInfo = ({ isOpen, onClose }: SystemInfoProps) => {
     const { systemInfo, isLoading, error, fetchSystemInfo } = useSystemInfo();
+    const [activeTab, setActiveTab] = useState<Tab>('system');
 
-    /**
-     * Fetches fresh system info every time the modal is opened.
-     */
     useEffect(() => {
         if (isOpen) {
             fetchSystemInfo();
+            setActiveTab('system');
         }
     }, [isOpen, fetchSystemInfo]);
 
@@ -52,7 +36,7 @@ export const SystemInfo = ({ isOpen, onClose }: SystemInfoProps) => {
                     <div className="flex justify-between items-center relative z-10">
                         <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-3">
                             <Cpu className="text-indigo-400" size={28} />
-                            System Information
+                            Settings &amp; Maintenance
                         </h2>
                         <button
                             onClick={onClose}
@@ -61,31 +45,44 @@ export const SystemInfo = ({ isOpen, onClose }: SystemInfoProps) => {
                             ✕
                         </button>
                     </div>
+
+                    {/* Tabs */}
+                    <div className="flex gap-1 mt-4">
+                        <TabButton active={activeTab === 'system'} onClick={() => setActiveTab('system')}>
+                            <Cpu size={15} />
+                            System Info
+                        </TabButton>
+                        <TabButton active={activeTab === 'maintenance'} onClick={() => setActiveTab('maintenance')}>
+                            <Wrench size={15} />
+                            Maintenance
+                        </TabButton>
+                    </div>
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-auto p-6 md:p-8 space-y-8 bg-slate-950/30 text-slate-200 shadow-inner">
-                    {isLoading ? (
-                        <div className="text-center py-12">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto"></div>
-                            <p className="text-slate-400 mt-4">Loading system information...</p>
-                        </div>
-                    ) : error ? (
-                        <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 flex items-start gap-3">
-                            <AlertCircle className="text-red-400 flex-shrink-0 mt-0.5" size={20} />
-                            <div>
-                                <h3 className="text-red-300 font-semibold">Error</h3>
-                                <p className="text-red-400/80 text-sm">{error}</p>
-                            </div>
-                        </div>
-                    ) : systemInfo ? (
+                <div className="flex-1 overflow-auto p-6 md:p-8 bg-slate-950/30 text-slate-200 shadow-inner">
+                    {activeTab === 'system' && (
                         <>
-                            <GpuStats torch={systemInfo.torch} gpu={systemInfo.gpu} />
-                            <CpuStats cpu={systemInfo.cpu} />
-                            <SystemDetails system={systemInfo.system} torch={systemInfo.torch} />
-                            <PerformanceStatus torch={systemInfo.torch} />
+                            {isLoading && !systemInfo ? (
+                                <div className="text-center py-12">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto" />
+                                    <p className="text-slate-400 mt-4">Loading…</p>
+                                </div>
+                            ) : error ? (
+                                <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 flex items-start gap-3">
+                                    <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
+                                    <div>
+                                        <h3 className="text-red-300 font-semibold">Error</h3>
+                                        <p className="text-red-400/80 text-sm">{error}</p>
+                                    </div>
+                                </div>
+                            ) : systemInfo ? (
+                                <SystemLog systemInfo={systemInfo} onRefresh={fetchSystemInfo} isLoading={isLoading} />
+                            ) : null}
                         </>
-                    ) : null}
+                    )}
+
+                    {activeTab === 'maintenance' && <MaintenanceTab />}
                 </div>
 
                 {/* Footer */}
@@ -101,5 +98,26 @@ export const SystemInfo = ({ isOpen, onClose }: SystemInfoProps) => {
         </div>
     );
 };
+
+const TabButton = ({
+    active,
+    onClick,
+    children,
+}: {
+    active: boolean;
+    onClick: () => void;
+    children: React.ReactNode;
+}) => (
+    <button
+        onClick={onClick}
+        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${
+            active
+                ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
+        }`}
+    >
+        {children}
+    </button>
+);
 
 export default SystemInfo;

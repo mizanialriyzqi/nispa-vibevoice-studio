@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, CheckCircle2, Download, Loader2, Music, FileText, AlertCircle, RefreshCw, Scissors } from 'lucide-react';
 import { AudioWaveformPlayer } from '../../../components/ui/AudioWaveformPlayer';
 import { AudioTrimmer } from '../../../components/ui/AudioTrimmer';
@@ -6,7 +6,7 @@ import { useSubtitleContext } from '../context/SubtitleContext';
 import type { SubtitleSegment } from '../context/SubtitleContext';
 import { useGlobalContext } from '../../../context/GlobalContext';
 import { ttsApi } from '../../../services/ttsApi';
-import { base64ToBlobUrl } from '../../../utils/audio';
+import { serializeAudioUrl, filePathToHttpUrl } from '../../../utils/audio';
 
 interface JobReviewModalProps {
     isOpen: boolean;
@@ -33,66 +33,39 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
     
     const { setSubtitleSegments, updateJob, selectedVoiceId, selectedModel, selectedLanguage } = useSubtitleContext();
 
-    // Build and memoize audio URL map for all segments, revoking stale blob URLs on change
-    const blobUrlsRef = useRef<Record<number, string>>({});
     const audioUrlMap = useMemo(() => {
-        const prevBlobUrls = blobUrlsRef.current;
-        const newBlobUrls: Record<number, string> = {};
         const map: Record<number, string | undefined> = {};
-
         segments.forEach(seg => {
-            if (seg.audioUrl && seg.audioUrl.startsWith('data:audio/')) {
+            if (seg.audioUrl && (
+                seg.audioUrl.startsWith('data:audio/') ||
+                seg.audioUrl.startsWith('blob:') ||
+                seg.audioUrl.startsWith('http://') ||
+                seg.audioUrl.startsWith('https://')
+            )) {
                 map[seg.index] = seg.audioUrl;
-            } else if (seg.audioUrl && seg.audioUrl.startsWith('blob:')) {
-                map[seg.index] = seg.audioUrl;
-            } else if (seg.audioBase64) {
-                try {
-                    const url = base64ToBlobUrl(seg.audioBase64);
-                    newBlobUrls[seg.index] = url;
-                    map[seg.index] = url;
-                } catch (e) {
-                    console.error("Failed to reconstruct audio in modal:", e);
-                }
             }
         });
-
-        // Revoke blob URLs that are no longer needed
-        Object.entries(prevBlobUrls).forEach(([key, url]) => {
-            const idx = Number(key);
-            if (!newBlobUrls[idx]) {
-                URL.revokeObjectURL(url);
-            }
-        });
-        blobUrlsRef.current = newBlobUrls;
         return map;
     }, [segments]);
-
-    // Revoke all blob URLs on unmount
-    useEffect(() => {
-        return () => {
-            Object.values(blobUrlsRef.current).forEach(url => URL.revokeObjectURL(url));
-        };
-    }, []);
 
     if (!isOpen) return null;
 
     const handleTrimmed = async (index: number, newB64: string) => {
         const newAudioUrl = `data:audio/wav;base64,${newB64}`;
-        
-        // Update context
-        const updatedSegments = segments.map(s => {
-            if (s.index === index) {
-                return { ...s, audioBase64: newB64, audioUrl: newAudioUrl };
-            }
-            return s;
-        });
+
+        const updatedSegments = segments.map(s =>
+            s.index === index ? { ...s, audioUrl: newAudioUrl } : s
+        );
         setSubtitleSegments(updatedSegments);
 
-        // Update database
         if (jobId) {
-            await updateJob(jobId, { modified_segments: updatedSegments });
+            const dbSegments = updatedSegments.map(s => ({
+                ...s,
+                audioUrl: serializeAudioUrl(s.audioUrl),
+            }));
+            await updateJob(jobId, { modified_segments: dbSegments });
         }
-        
+
         setTrimmingId(null);
     };
 
@@ -136,33 +109,33 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
             fd.append('voice_id', voiceId);
             fd.append('model_name', modelName);
             fd.append('language', lang);
+            if (jobId !== null) {
+                fd.append('job_id', String(jobId));
+                fd.append('segment_index', String(seg.index));
+                fd.append('original_filename', jobName);
+            }
 
             const data = await ttsApi.generateSegment(fd);
-            const newBase64 = data.audio_base64;
-            const newAudioUrl = `data:audio/wav;base64,${newBase64}`;
 
-            // Update local state in context
-            const updatedSegments = segments.map(s => {
-                if (s.index === seg.index) {
-                    return { 
-                        ...s, 
-                        audioBase64: newBase64, 
-                        audioUrl: newAudioUrl,
-                        voice_id: voiceId,
-                        model_name: modelName,
-                        language: lang
-                    };
-                }
-                return s;
-            });
+            // Prefer file path (stored on disk); fall back to base64 for immediate playback
+            const newAudioUrl = data.audio_path
+                ? filePathToHttpUrl(data.audio_path, import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000')
+                : `data:audio/wav;base64,${data.audio_base64}`;
+
+            const updatedSegments = segments.map(s =>
+                s.index === seg.index
+                    ? { ...s, audioUrl: newAudioUrl, voice_id: voiceId, model_name: modelName, language: lang }
+                    : s
+            );
 
             setSubtitleSegments(updatedSegments);
 
-            // Update database immediately
             if (jobId) {
-                await updateJob(jobId, {
-                    modified_segments: updatedSegments
-                });
+                const dbSegments = updatedSegments.map(s => ({
+                    ...s,
+                    audioUrl: serializeAudioUrl(s.audioUrl),
+                }));
+                await updateJob(jobId, { modified_segments: dbSegments });
             }
 
         } catch (e: unknown) {

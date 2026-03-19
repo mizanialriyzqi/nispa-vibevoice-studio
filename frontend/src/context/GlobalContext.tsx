@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useSystemInfo } from '../hooks/useSystemInfo';
 import type { SystemInfoData } from '../hooks/useSystemInfo';
@@ -89,37 +89,33 @@ export function GlobalProvider({ children, skipPolling = false }: { children: Re
     const connectionStatus: ConnectionStatus = !isBackendReady ? 'connecting' : systemInfoError ? 'error' : 'connected';
 
     /**
-     * Fetches available voices from the backend.
-     */
-    const fetchVoices = useCallback(async () => {
-        try {
-            const data = await ttsApi.getVoices();
-            if (data.voices) setVoices(data.voices);
-        } catch (err) {
-            console.error("Failed to fetch voices:", err);
-        }
-    }, []);
-
-    /**
-     * Fetches available TTS models from the backend.
-     */
-    const fetchModels = useCallback(async () => {
-        try {
-            const data = await ttsApi.getModels();
-            if (data.models) setModels(data.models);
-        } catch (err) {
-            console.error("Failed to fetch models:", err);
-        }
-    }, []);
-
-    /**
-     * Refreshes both voices and models data.
+     * Refreshes all global data in a single logical batch.
      */
     const refreshTtsData = useCallback(async () => {
         setIsLoadingTtsData(true);
-        await Promise.all([fetchVoices(), fetchModels()]);
-        setIsLoadingTtsData(false);
-    }, [fetchVoices, fetchModels]);
+        try {
+            const [vData, mData] = await Promise.all([
+                ttsApi.getVoices(),
+                ttsApi.getModels()
+            ]);
+            
+            // Batch state updates
+            if (vData.voices) setVoices(vData.voices);
+            if (mData.models) setModels(mData.models);
+        } catch (err) {
+            console.error("Failed to fetch global TTS data:", err);
+        } finally {
+            setIsLoadingTtsData(false);
+        }
+    }, []);
+
+    // Initial load handler
+    const initializeAppData = useCallback(async () => {
+        await Promise.all([
+            fetchSystemInfo(),
+            refreshTtsData()
+        ]);
+    }, [fetchSystemInfo, refreshTtsData]);
 
     // Poll for backend readiness
     useEffect(() => {
@@ -127,28 +123,30 @@ export function GlobalProvider({ children, skipPolling = false }: { children: Re
 
         let isMounted = true;
         let pollInterval: ReturnType<typeof setInterval> | undefined;
+        let isChecking = false;
 
         const checkStatus = async () => {
+            if (isChecking) return;
+            isChecking = true;
             try {
                 const data = await systemApi.getStatus();
-                if (data.status === 'ready') {
-                    if (isMounted) {
-                        setIsBackendReady(true);
-                        clearInterval(pollInterval);
-                    }
+                if (data.status === 'ready' && isMounted) {
+                    setIsBackendReady(true);
+                    if (pollInterval) clearInterval(pollInterval);
                 }
             } catch (e) {
-                // Ignore errors during polling
                 if (isMounted) setIsBackendReady(false);
+            } finally {
+                isChecking = false;
             }
         };
 
-        checkStatus(); // Check immediately
-        pollInterval = setInterval(checkStatus, 2000); // Then poll every 2s
+        checkStatus(); 
+        pollInterval = setInterval(checkStatus, 3000); // Relaxed to 3s
 
         return () => {
             isMounted = false;
-            clearInterval(pollInterval);
+            if (pollInterval) clearInterval(pollInterval);
         };
     }, [skipPolling]);
 
@@ -157,39 +155,57 @@ export function GlobalProvider({ children, skipPolling = false }: { children: Re
         if (!isBackendReady && isProcessing) {
             setIsProcessing(false);
             setAudioUrl(null);
-            console.log("[Global] Backend disconnected. Resetting processing state.");
         }
     }, [isBackendReady, isProcessing]);
 
-    // Fetch data once backend is ready
+    // Fetch data ONCE when backend becomes ready
+    const hasInitialized = useRef(false);
+    const hasTriggeredInitialization = useRef(false);
+
     useEffect(() => {
-        if (isBackendReady) {
-            fetchSystemInfo();
-            refreshTtsData();
+        if (isBackendReady && !hasTriggeredInitialization.current) {
+            hasTriggeredInitialization.current = true;
+            initializeAppData().then(() => {
+                hasInitialized.current = true;
+            });
         }
-    }, [isBackendReady, fetchSystemInfo, refreshTtsData]);
+    }, [isBackendReady, initializeAppData]);
+
+    const contextValue = useMemo(() => ({
+        appMode,
+        setAppMode,
+        isProcessing,
+        setIsProcessing,
+        audioUrl,
+        setAudioUrl,
+        systemInfo,
+        fetchSystemInfo,
+        connectionStatus,
+        isLoadingSystemInfo,
+        systemInfoError,
+        isBackendReady,
+        voices,
+        models,
+        isLoadingTtsData,
+        refreshTtsData
+    }), [
+        appMode,
+        isProcessing,
+        audioUrl,
+        systemInfo,
+        fetchSystemInfo,
+        connectionStatus,
+        isLoadingSystemInfo,
+        systemInfoError,
+        isBackendReady,
+        voices,
+        models,
+        isLoadingTtsData,
+        refreshTtsData
+    ]);
 
     return (
-        <GlobalContext.Provider
-            value={{
-                appMode,
-                setAppMode,
-                isProcessing,
-                setIsProcessing,
-                audioUrl,
-                setAudioUrl,
-                systemInfo,
-                fetchSystemInfo,
-                connectionStatus,
-                isLoadingSystemInfo,
-                systemInfoError,
-                isBackendReady,
-                voices,
-                models,
-                isLoadingTtsData,
-                refreshTtsData
-            }}
-        >
+        <GlobalContext.Provider value={contextValue}>
             {children}
         </GlobalContext.Provider>
     );

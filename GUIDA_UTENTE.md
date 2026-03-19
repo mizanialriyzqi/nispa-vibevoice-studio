@@ -1,4 +1,4 @@
-# Guida all'Uso - Nispa VibeVoice Studio (v0.5.0)
+# Guida all'Uso - Nispa VibeVoice Studio (v0.6.0)
 
 Benvenuto in **Nispa VibeVoice Studio**. Questa guida ti accompagnerà nell'utilizzo dell'architettura dual-engine (**VibeVoice** e **Qwen3-TTS**) per generare voci sintetizzate di altissima qualità, con capacità avanzate di clonazione e generazione parallela.
 
@@ -25,9 +25,10 @@ Al primo avvio, usa lo script per scaricare i pesi ufficiali:
 - **Windows**: `venv\Scripts\python backend\scripts\download_model.py`
 
 ### Batching Dinamico & Gestione VRAM
-Il sistema è "Hardware-Aware". Prima di avviare una generazione, il motore interroga la tua GPU per capire quanta VRAM è libera.
+Il sistema è "Hardware-Aware". Prima di ogni batch, il motore interroga la tua GPU per capire quanta VRAM è libera in quel preciso istante — non solo all'avvio.
 - Se hai una GPU potente (es. RTX 4090), il sistema processerà fino a 8 frasi contemporaneamente, riducendo drasticamente i tempi di attesa.
 - Se hai una GPU più piccola (es. 8GB), il sistema adatterà il carico per evitare crash (Out of Memory).
+- Dopo ogni batch, la VRAM viene liberata esplicitamente prima di procedere con quello successivo.
 
 ### Requisiti di Risorse (VRAM)
 
@@ -54,19 +55,19 @@ Premi **Edit Subtitles** per aprire l'editor testuale. Qui puoi ritoccare la tra
 ### Fase 3: Generazione e Salvataggio Istantaneo
 1. Scegli la voce e il modello TTS.
 2. Premi **Generate Voice-over**.
-3. **Nessuna perdita di dati:** Il nuovo sistema salva l'audio direttamente nel database nel preciso istante in cui viene generato. Se chiudi il browser per sbaglio o premi "Cancel", tutto l'audio creato fino a quel secondo è salvo e pronto per essere ripreso.
+3. **Nessuna perdita di dati:** Ogni segmento audio viene salvato su disco come file WAV (`data/audio-rendering/`) nel momento esatto in cui viene generato. Il database memorizza solo il percorso del file — non più blob base64. Se chiudi il browser o premi "Cancel", tutto l'audio prodotto fino a quel secondo è al sicuro e recuperabile dall'archivio.
 
 ---
 
-## 4. Revisione Audio e Finalizzazione (Novità v0.6.0)
+## 4. Revisione Audio e Finalizzazione
 
 A generazione completata (o interrotta), comparirà un pulsante verde **Review Audio**. Cliccandolo si aprirà la *Galleria Audio del Job*.
 
 ### Rigenerazione Chirurgica (Regenerate)
 Se una frase è stata pronunciata male:
-1. Trovala nella galleria (il modal è ora impaginato a blocchi di 10 per gestire script enormi).
+1. Trovala nella galleria (paginata a blocchi di 10 per gestire script enormi).
 2. Premi il pulsante **Regenerate** (le due frecce circolari) accanto all'audio.
-3. Il sistema ricorderà esattamente la voce e il modello scelti per quel segmento e lo rigenererà al volo, aggiornando il database all'istante.
+3. Il sistema ricorderà esattamente la voce e il modello scelti per quel segmento e lo rigenererà al volo, salvando il nuovo file WAV su disco e aggiornando il riferimento nel database.
 
 ### Editor Audio Integrato (Trimmer)
 Se l'intelligenza artificiale ha generato "allucinazioni" (rumori o fruscii alla fine della frase):

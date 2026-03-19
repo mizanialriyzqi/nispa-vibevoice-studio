@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { jobsApi } from '../services/jobsApi';
 import { formatTimeSrt } from '../utils/format';
+import { showConfirm, showToast } from '../utils/uiEvents';
 
 /**
  * Represents a single subtitle segment in a job.
@@ -12,6 +13,7 @@ export interface Segment {
     text: string;
     is_translated?: boolean;
     original_text?: string | null;
+    audioUrl?: string;
 }
 
 /**
@@ -25,6 +27,7 @@ export interface Job {
     voice_id: string;
     voice_name: string;
     model_name: string;
+    language: string | null;
     group_by_punctuation: boolean;
     notes: string | null;
     audio_url: string | null;
@@ -45,7 +48,7 @@ export function useJobArchive() {
     const [loading, setLoading] = useState(false);
 
     /**
-     * Fetches the list of all jobs from the backend.
+     * Fetches the list of all jobs from the backend (lightweight version).
      */
     const loadJobs = useCallback(async () => {
         setLoading(true);
@@ -65,7 +68,14 @@ export function useJobArchive() {
      * @param {number} jobId - The ID of the job to delete.
      */
     const deleteJob = useCallback(async (jobId: number) => {
-        if (confirm('Are you sure you want to delete this job?')) {
+        const confirmed = await showConfirm({
+            title: 'Delete Job',
+            message: 'Are you sure you want to delete this job?',
+            confirmLabel: 'Delete',
+            cancelLabel: 'Cancel',
+            variant: 'danger',
+        });
+        if (confirmed) {
             try {
                 const res = await jobsApi.delete(jobId);
                 if (res.ok) {
@@ -83,13 +93,15 @@ export function useJobArchive() {
      * @param {Job} job - The job object containing segments to export.
      */
     const downloadSrt = useCallback((job: Job) => {
-        if (!job.modified_segments || job.modified_segments.length === 0) {
-            alert("No segments to download.");
+        const segments = job.modified_segments || job.subtitle_segments || [];
+
+        if (segments.length === 0) {
+            showToast("No segments to download.", 'info');
             return;
         }
 
         let srtContent = '';
-        job.modified_segments.forEach((seg, i) => {
+        segments.forEach((seg, i) => {
             const index = i + 1;
             const startTime = formatTimeSrt(seg.start_ms);
             const endTime = formatTimeSrt(seg.end_ms);
@@ -119,16 +131,16 @@ export function useJobArchive() {
             const savedJob = await jobsApi.create(jobData, silent);
             if (savedJob) {
                 if (!silent) {
-                    alert(`Job #${savedJob.id} saved as draft!`);
+                    showToast(`Job #${savedJob.id} saved as draft!`, 'success');
                 }
                 await loadJobs();
                 return savedJob;
             } else if (!silent) {
-                alert('Failed to save job');
+                showToast('Failed to save job', 'error');
             }
         } catch (err) {
             console.error('Error saving job:', err);
-            if (!silent) alert('Error saving job');
+            if (!silent) showToast('Error saving job', 'error');
         }
         return null;
     }, [loadJobs]);

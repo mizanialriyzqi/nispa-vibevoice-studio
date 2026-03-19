@@ -5,16 +5,26 @@ echo    Nispa VibeVoice Studio - Launcher
 echo =======================================
 
 :: --- SoX Runtime Patch ---
-:: Check if 'sox' is in PATH, if not try to add common installation paths
+:: If sox is not in PATH, search common Windows installation directories
 sox --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [i] SoX not found in system PATH. Searching in common locations...
-    set "SOX_SEARCH_PATH=C:\Program Files (x86)\sox-14-4-2"
-    if exist "!SOX_SEARCH_PATH!\sox.exe" (
-        echo [OK] Found SoX at !SOX_SEARCH_PATH!. Adding to session PATH.
-        set "PATH=%PATH%;!SOX_SEARCH_PATH!"
-    ) else (
-        echo [!] WARNING: SoX not found. Qwen3 cloning may fail.
+    set "SOX_FOUND=0"
+    for %%P in (
+        "C:\Program Files (x86)\sox-14-4-2"
+        "C:\Program Files\sox-14-4-2"
+        "C:\Program Files (x86)\sox"
+        "C:\Program Files\sox"
+        "C:\sox"
+    ) do (
+        if "!SOX_FOUND!"=="0" if exist "%%~P\sox.exe" (
+            echo [OK] Found SoX at %%~P. Adding to session PATH.
+            set "PATH=%PATH%;%%~P"
+            set "SOX_FOUND=1"
+        )
+    )
+    if "!SOX_FOUND!"=="0" (
+        echo [!] WARNING: SoX not found. Voice cloning may fail.
         echo     Install it from: http://sox.sourceforge.net/
     )
 ) else (
@@ -24,7 +34,6 @@ if %errorlevel% neq 0 (
 
 echo.
 echo Starting Backend Server...
-:: We pass the updated PATH to the new process
 start "VibeVoice Backend" powershell -NoExit -Command "$env:PATH='%PATH%'; cd backend; ..\venv\Scripts\Activate.ps1; uvicorn main:app --reload"
 
 echo.
