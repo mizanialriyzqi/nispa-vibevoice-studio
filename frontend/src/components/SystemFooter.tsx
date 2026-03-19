@@ -13,16 +13,17 @@ export default function SystemFooter({ systemInfo }: SystemFooterProps) {
   const gpu = systemInfo.gpu.gpu_devices?.[0];
   const availableRamGb = systemInfo.cpu.memory_available_gb.toFixed(1);
 
-  // Fallback if no specific GPU info but CUDA/MPS is true
-  const gpuName = gpu?.name || (systemInfo.torch.mps_available ? "Apple Metal (MPS)" : "Unknown GPU");
-  const vram = gpu?.memory_total || "?";
+  // gpu_devices may be empty (loaded on-demand). Fall back to generic labels.
+  const gpuName = gpu?.name
+    ?? (systemInfo.torch.mps_available ? "Apple Metal (MPS)" : "NVIDIA GPU");
+  const vram = gpu?.memory_total ?? null;
 
   return (
     <div className="w-full max-w-4xl mt-8 flex items-center justify-center gap-6 text-xs md:text-sm font-medium tracking-wide">
       {isGpu ? (
         <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
           <Zap size={16} />
-          <span>Hardware Accelerated • {gpuName} ({vram} VRAM)</span>
+          <span>Hardware Accelerated • {gpuName}{vram ? ` (${vram} VRAM)` : ''}</span>
         </div>
       ) : (
         <div className="flex items-center gap-2 text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-full border border-slate-700/50">

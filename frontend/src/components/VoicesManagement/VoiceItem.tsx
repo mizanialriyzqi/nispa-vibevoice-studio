@@ -1,15 +1,17 @@
 import React from 'react';
 import { Wand2, Trash2, CheckCircle2 } from 'lucide-react';
 import { AudioWaveformPlayer } from '../ui/AudioWaveformPlayer';
+import { API_BASE_URL } from '../../services/apiClient';
+import type { Voice } from '../../context/GlobalContext';
 
 interface VoiceItemProps {
-    voice: any;
+    voice: Voice;
     editingId: string | null;
     editText: string;
     setEditingId: (id: string | null) => void;
     setEditText: (text: string) => void;
     handleSaveTranscription: (voiceId: string) => void;
-    handleReprocess: (voice: any) => void;
+    handleReprocess: (voice: Voice) => void;
     handleDelete: (voiceId: string) => void;
 }
 
@@ -28,7 +30,7 @@ export const VoiceItem: React.FC<VoiceItemProps> = ({
             <div className="flex items-center gap-4 flex-1 w-full">
                 <div className="w-full md:w-64">
                     <AudioWaveformPlayer 
-                        audioUrl={`http://127.0.0.1:8000/api/voices/${voice.id}/audio?t=${voice.id}`}
+                        audioUrl={`${API_BASE_URL}/api/voices/${voice.id}/audio?t=${voice.id}`}
                     />
                 </div>
                 

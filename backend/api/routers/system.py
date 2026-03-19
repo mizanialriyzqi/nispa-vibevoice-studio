@@ -133,56 +133,20 @@ async def test_qwen_integration():
             
     return {"results": results}
 
-@router.get("/system-info")
-def get_system_info():
+def _collect_system_info() -> dict:
     """
-    Retrieves detailed information about the system's hardware and environment.
-
-    Includes GPU (CUDA/MPS) availability, CPU statistics, memory usage, 
-    and OS/Python environment details.
-
-    Returns:
-        dict: A comprehensive nested dictionary containing system, torch, GPU, and CPU information.
+    Collect CPU/RAM/platform info only — zero CUDA calls.
+    Safe to call automatically on startup without risk of GPU driver conflicts.
     """
-    gpu_info = {
-        "has_cuda": torch.cuda.is_available(),
-        "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
-        "gpu_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
-        "gpu_devices": [],
-    }
-    
-    # Get details for each GPU
-    if torch.cuda.is_available():
-        for i in range(torch.cuda.device_count()):
-            try:
-                device_name = torch.cuda.get_device_name(i)
-                device_capability = torch.cuda.get_device_capability(i)
-                gpu_info["gpu_devices"].append({
-                    "index": i,
-                    "name": device_name,
-                    "compute_capability": f"{device_capability[0]}.{device_capability[1]}",
-                    "memory_allocated": f"{torch.cuda.memory_allocated(i) / 1024**3:.2f} GB",
-                    "memory_reserved": f"{torch.cuda.memory_reserved(i) / 1024**3:.2f} GB",
-                    "memory_total": f"{torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB",
-                })
-            except Exception as e:
-                gpu_info["gpu_devices"].append({
-                    "index": i,
-                    "error": str(e)
-                })
-    
-    # MPS (Apple Silicon)
-    mps_available = torch.backends.mps.is_available() if hasattr(torch.backends, 'mps') else False
-    
-    # CPU info
-    cpu_info = {
-        "physical_cores": psutil.cpu_count(logical=False),
-        "logical_cores": psutil.cpu_count(logical=True),
-        "cpu_percent": psutil.cpu_percent(interval=1),
-        "memory_total_gb": psutil.virtual_memory().total / (1024**3),
-        "memory_available_gb": psutil.virtual_memory().available / (1024**3),
-    }
-    
+    has_cuda = torch.cuda.is_available()   # safe: only checks library presence
+    mps_available = (
+        torch.backends.mps.is_available()
+        if hasattr(torch.backends, "mps")
+        else False
+    )
+    vm = psutil.virtual_memory()
+    cpu_percent = psutil.cpu_percent(interval=1)
+
     return {
         "system": {
             "platform": platform.system(),
@@ -191,10 +155,59 @@ def get_system_info():
         },
         "torch": {
             "version": torch.__version__,
-            "cuda_available": gpu_info["has_cuda"],
-            "cuda_version": gpu_info["cuda_version"],
+            "cuda_available": has_cuda,
+            "cuda_version": torch.version.cuda if has_cuda else None,
             "mps_available": mps_available,
         },
-        "gpu": gpu_info,
-        "cpu": cpu_info,
+        "gpu": {
+            "has_cuda": has_cuda,
+            "cuda_version": torch.version.cuda if has_cuda else None,
+            "gpu_count": 0,      # populated only via /system/gpu-details
+            "gpu_devices": [],   # populated only via /system/gpu-details
+        },
+        "cpu": {
+            "physical_cores": psutil.cpu_count(logical=False),
+            "logical_cores": psutil.cpu_count(logical=True),
+            "cpu_percent": cpu_percent,
+            "memory_total_gb": vm.total / (1024 ** 3),
+            "memory_available_gb": vm.available / (1024 ** 3),
+        },
     }
+
+
+def _collect_gpu_details() -> list:
+    """
+    Query per-device CUDA info. Called only on explicit user request.
+    Runs in a threadpool thread to keep the event loop free.
+    """
+    devices = []
+    if not torch.cuda.is_available():
+        return devices
+    for i in range(torch.cuda.device_count()):
+        try:
+            props = torch.cuda.get_device_properties(i)
+            cap = torch.cuda.get_device_capability(i)
+            devices.append({
+                "index": i,
+                "name": props.name,
+                "compute_capability": f"{cap[0]}.{cap[1]}",
+                "memory_allocated": "N/A",
+                "memory_reserved": "N/A",
+                "memory_total": f"{props.total_memory / 1024**3:.2f} GB",
+            })
+        except Exception as e:
+            devices.append({"index": i, "error": str(e)})
+    return devices
+
+
+@router.get("/system-info")
+async def get_system_info():
+    """CPU/RAM/platform info — no CUDA device queries, safe for auto-call on startup."""
+    return await asyncio.to_thread(_collect_system_info)
+
+
+@router.get("/system/gpu-details")
+async def get_gpu_details():
+    """Per-device GPU details. Called only on explicit user request to avoid GPU driver conflicts."""
+    devices = await asyncio.to_thread(_collect_gpu_details)
+    return {"gpu_devices": devices}

@@ -17,28 +17,28 @@ describe('useScriptGeneration', () => {
         global.fetch = vi.fn();
         global.URL.createObjectURL = vi.fn(() => 'blob:url');
 
-        (useScriptContext as any).mockReturnValue({
+        vi.mocked(useScriptContext).mockReturnValue({
             scriptFile: null,
             scriptText: 'Speaker1: Hello',
             speakers: [{ name: 'Speaker1', voiceId: 'voice1' }],
             selectedModel: 'model1',
             setErrorMsg: mockSetErrorMsg
-        });
+        } as ReturnType<typeof useScriptContext>);
 
-        (useGlobalContext as any).mockReturnValue({
+        vi.mocked(useGlobalContext).mockReturnValue({
             setIsProcessing: mockSetIsProcessing,
             setAudioUrl: mockSetAudioUrl,
             models: [{ id: 'model1', name: 'Model 1', supports_voice_design: false }],
             selectedLanguage: 'English'
-        });
+        } as ReturnType<typeof useGlobalContext>);
     });
 
     it('should handle successful generation stream', async () => {
         // Mock task creation response
-        (global.fetch as any).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             json: async () => ({ task_id: 'task123' })
-        });
+        } as Response);
 
         // Mock stream response
         const mockStream = {
@@ -48,7 +48,6 @@ describe('useScriptGeneration', () => {
                     read: async () => {
                         if (count === 0) {
                             count++;
-                            const encoder = new TextDecoder();
                             const data = 'data: {"type": "progress", "progress": 50, "status": "Processing"}\n';
                             return { value: new TextEncoder().encode(data), done: false };
                         }
@@ -63,10 +62,10 @@ describe('useScriptGeneration', () => {
             }
         };
 
-        (global.fetch as any).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: true,
             body: mockStream
-        });
+        } as Response);
 
         const { result } = renderHook(() => useScriptGeneration());
 
@@ -81,11 +80,11 @@ describe('useScriptGeneration', () => {
     });
 
     it('should handle errors in task creation', async () => {
-        (global.fetch as any).mockResolvedValueOnce({
+        vi.mocked(global.fetch).mockResolvedValueOnce({
             ok: false,
             status: 500,
             json: async () => ({ detail: 'Server Error' })
-        });
+        } as Response);
 
         const { result } = renderHook(() => useScriptGeneration());
 

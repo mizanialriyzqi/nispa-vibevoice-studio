@@ -2,6 +2,8 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import type { ReactNode } from 'react';
 import { useSystemInfo } from '../hooks/useSystemInfo';
 import type { SystemInfoData } from '../hooks/useSystemInfo';
+import { ttsApi } from '../services/ttsApi';
+import { systemApi } from '../services/systemApi';
 
 /**
  * Available modes for the application.
@@ -91,8 +93,7 @@ export function GlobalProvider({ children, skipPolling = false }: { children: Re
      */
     const fetchVoices = useCallback(async () => {
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/voices');
-            const data = await res.json();
+            const data = await ttsApi.getVoices();
             if (data.voices) setVoices(data.voices);
         } catch (err) {
             console.error("Failed to fetch voices:", err);
@@ -104,8 +105,7 @@ export function GlobalProvider({ children, skipPolling = false }: { children: Re
      */
     const fetchModels = useCallback(async () => {
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/models');
-            const data = await res.json();
+            const data = await ttsApi.getModels();
             if (data.models) setModels(data.models);
         } catch (err) {
             console.error("Failed to fetch models:", err);
@@ -126,18 +126,15 @@ export function GlobalProvider({ children, skipPolling = false }: { children: Re
         if (skipPolling) return;
 
         let isMounted = true;
-        let pollInterval: any;
+        let pollInterval: ReturnType<typeof setInterval> | undefined;
 
         const checkStatus = async () => {
             try {
-                const res = await fetch('http://127.0.0.1:8000/api/status');
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.status === 'ready') {
-                        if (isMounted) {
-                            setIsBackendReady(true);
-                            clearInterval(pollInterval);
-                        }
+                const data = await systemApi.getStatus();
+                if (data.status === 'ready') {
+                    if (isMounted) {
+                        setIsBackendReady(true);
+                        clearInterval(pollInterval);
                     }
                 }
             } catch (e) {

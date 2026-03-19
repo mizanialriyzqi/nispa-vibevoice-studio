@@ -19,10 +19,10 @@ describe('useSystemInfo', () => {
 
     it('fetches system info successfully', async () => {
         const mockData = { system: { platform: 'win32' } };
-        (fetch as any).mockResolvedValue({
+        vi.mocked(fetch).mockResolvedValue({
             ok: true,
             json: async () => mockData
-        });
+        } as Response);
 
         const { result } = renderHook(() => useSystemInfo());
 
@@ -30,16 +30,17 @@ describe('useSystemInfo', () => {
             await result.current.fetchSystemInfo();
         });
 
-        expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:8000/api/system-info');
+        expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:8000/api/system-info', undefined);
         expect(result.current.systemInfo).toEqual(mockData);
         expect(result.current.isLoading).toBe(false);
         expect(result.current.error).toBeNull();
     });
 
     it('handles fetch error', async () => {
-        (fetch as any).mockResolvedValue({
-            ok: false
-        });
+        vi.mocked(fetch).mockResolvedValue({
+            ok: false,
+            json: async () => ({ detail: 'Failed to fetch system info' })
+        } as Response);
 
         const { result } = renderHook(() => useSystemInfo());
 

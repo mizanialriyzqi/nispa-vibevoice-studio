@@ -11,7 +11,7 @@ interface FileUploadAreaProps {
     subtitleDefault: string;
     titleLoaded?: string;
     subtitleLoaded?: string;
-    activeColorClass: string;   // e.g. "blue-500"
+    activeBorderClass: string;  // e.g. "border-blue-500"
     activeBgClass: string;      // e.g. "bg-blue-500/5"
     activeTextClass: string;    // e.g. "text-blue-500"
     layout?: 'vertical' | 'horizontal';
@@ -34,7 +34,7 @@ export default function FileUploadArea({
     subtitleDefault,
     titleLoaded,
     subtitleLoaded = "Ready for generation",
-    activeColorClass,
+    activeBorderClass,
     activeBgClass,
     activeTextClass,
     layout = 'vertical',
@@ -73,8 +73,8 @@ export default function FileUploadArea({
 
     const containerClasses = `
         border-2 border-dashed rounded-xl transition-all cursor-pointer 
-        ${isDragging ? `border-${activeColorClass} ${activeBgClass} scale-[1.01] shadow-lg` : 
-          file ? `border-${activeColorClass} ${activeBgClass}` : 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/50'}
+        ${isDragging ? `${activeBorderClass} ${activeBgClass} scale-[1.01] shadow-lg` :
+          file ? `${activeBorderClass} ${activeBgClass}` : 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/50'}
         ${isHorizontal ? 'p-6 flex items-center gap-6' : 'p-10 flex flex-col items-center justify-center'}
         ${className}
     `;

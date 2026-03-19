@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useRef, useEffect } from 'react';
 import type { ReactNode, MutableRefObject, Dispatch, SetStateAction, FC } from 'react';
+import { translationApi } from '../../../services/translationApi';
 
 /**
  * Properties provided by the TranslationContext.
@@ -83,13 +84,10 @@ export const TranslationProvider: FC<{ children: ReactNode }> = ({ children }) =
     const refreshOllamaModels = async () => {
         setIsLoadingModels(true);
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/ollama/models');
-            if (res.ok) {
-                const data = await res.json();
-                if (data.models && data.models.length > 0) {
-                    setOllamaModels(data.models);
-                    setSelectedOllamaModel(data.models[0]);
-                }
+            const data = await translationApi.getOllamaModels();
+            if (data.models && data.models.length > 0) {
+                setOllamaModels(data.models);
+                setSelectedOllamaModel(data.models[0]);
             }
         } catch (err) {
             console.error('Failed to load translation models:', err);

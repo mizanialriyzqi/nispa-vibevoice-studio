@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Segment } from './types';
 import { parseTimeToMs } from './utils';
+import { ttsApi } from '../../../../services/ttsApi';
 
 export const useSubtitleEditor = (initialSegments: Segment[], onSegmentsSave: (segments: Segment[]) => void, onClose: () => void) => {
     const [segments, setSegments] = useState<Segment[]>(initialSegments);
@@ -86,10 +87,7 @@ export const useSubtitleEditor = (initialSegments: Segment[], onSegmentsSave: (s
             fd.append('segments_json', JSON.stringify(approvedSegments));
             fd.append('output_format', 'mp3');
 
-            const res = await fetch('http://localhost:8000/api/finalize-audio', {
-                method: 'POST',
-                body: fd
-            });
+            const res = await ttsApi.finalizeAudio(fd);
 
             if (res.ok) {
                 const data = await res.json();

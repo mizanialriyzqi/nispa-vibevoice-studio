@@ -13,10 +13,11 @@ const mockContext = {
     fillStyle: '',
 };
 
-HTMLCanvasElement.prototype.getContext = vi.fn(() => mockContext as any);
+HTMLCanvasElement.prototype.getContext = vi.fn(() => mockContext as unknown as CanvasRenderingContext2D);
 
 // Mock AudioContext
 class MockAudioContext {
+    state = 'running';
     decodeAudioData = vi.fn().mockResolvedValue({
         getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
         length: 100,
@@ -24,8 +25,9 @@ class MockAudioContext {
         sampleRate: 44100,
         numberOfChannels: 1,
     });
+    close = vi.fn().mockResolvedValue(undefined);
 }
-(window as any).AudioContext = MockAudioContext;
+vi.stubGlobal('AudioContext', MockAudioContext);
 
 // Mock Audio Element
 Object.defineProperty(HTMLAudioElement.prototype, 'duration', {

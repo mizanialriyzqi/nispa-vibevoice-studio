@@ -5,6 +5,7 @@ import type { Segment } from './types';
 import { formatMsToTime } from './utils';
 import { AudioWaveformPlayer } from '../../../../components/ui/AudioWaveformPlayer';
 import { AudioTrimmer } from '../../../../components/ui/AudioTrimmer';
+import { ttsApi } from '../../../../services/ttsApi';
 
 interface SubtitleSegmentRowProps {
     segment: Segment;
@@ -14,8 +15,6 @@ interface SubtitleSegmentRowProps {
     onEndTimeChange: (index: number, time: string) => void;
     onDelete: (index: number) => void;
     onTranslated: (index: number, translatedSeg: Segment) => void;
-    onAudioUpdated: (index: number, audioUrl: string) => void;
-    onApprovalToggle: (index: number) => void;
 }
 
 export const SubtitleSegmentRow: React.FC<SubtitleSegmentRowProps> = React.memo(({
@@ -25,13 +24,10 @@ export const SubtitleSegmentRow: React.FC<SubtitleSegmentRowProps> = React.memo(
     onStartTimeChange,
     onEndTimeChange,
     onDelete,
-    onTranslated,
-    onAudioUpdated,
-    onApprovalToggle
+    onTranslated
 }) => {
     const [isTranslating, setIsTranslating] = useState(false);
-    const [showTrimmer, setShowTrimmer] = useState(false);
-    
+
     const { targetLanguage } = useTranslationContext();
 
     const handleTranslate = async () => {
@@ -47,30 +43,19 @@ export const SubtitleSegmentRow: React.FC<SubtitleSegmentRowProps> = React.memo(
             fd.append('target_language', targetLanguage);
             fd.append('model_name', 'NLLB-200-Distilled-600M');
 
-            const res = await fetch('http://localhost:8000/api/translate-segment', {
-                method: 'POST', body: fd
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                const updated = {
-                    ...segment,
-                    original_text: segment.original_text || segment.text,
-                    text: data.translated_text,
-                    is_translated: true
-                };
-                onTranslated(index, updated);
-            }
+            const data = await ttsApi.translateSegment(fd);
+            const updated = {
+                ...segment,
+                original_text: segment.original_text || segment.text,
+                text: data.translated_text,
+                is_translated: true
+            };
+            onTranslated(index, updated);
         } catch (e) {
             console.error(e);
         } finally {
             setIsTranslating(false);
         }
-    };
-
-    const handleTrimmed = (newB64: string) => {
-        onAudioUpdated(index, `data:audio/wav;base64,${newB64}`);
-        setShowTrimmer(false);
     };
 
     return (
@@ -106,16 +91,6 @@ export const SubtitleSegmentRow: React.FC<SubtitleSegmentRowProps> = React.memo(
                     >
                         {isTranslating ? <Loader2 size={16} className="animate-spin" /> : <Globe size={16} />}
                     </button>
-                    
-                    <button
-                        onClick={() => onApprovalToggle(index)}
-                        disabled={!segment.audioUrl}
-                        className={`p-2 rounded-lg transition border flex items-center gap-2 ${segment.isApproved ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg shadow-emerald-500/20' : 'bg-slate-700/50 text-slate-500 border-slate-600 hover:text-emerald-400 hover:border-emerald-500/30'}`}
-                        title={segment.isApproved ? "Approved" : "Verify Segment"}
-                    >
-                        <CheckCircle2 size={18} />
-                        {segment.isApproved && <span className="text-[10px] font-bold">VERIFIED</span>}
-                    </button>
 
                     <button
                         onClick={() => onDelete(index)}
@@ -132,35 +107,6 @@ export const SubtitleSegmentRow: React.FC<SubtitleSegmentRowProps> = React.memo(
                 className="w-full px-4 py-3 bg-slate-950/50 border border-slate-700/50 text-slate-200 rounded-xl text-sm resize-none focus:border-indigo-500/50 transition min-h-[80px]"
                 placeholder="Subtitle text..."
             />
-
-            {segment.audioUrl && (
-                <div className="pt-2 space-y-3 animate-fade-in">
-                    <div className="flex items-center justify-between">
-                        <div className="flex-1 mr-4">
-                            <AudioWaveformPlayer 
-                                audioUrl={segment.audioUrl} 
-                                height={40}
-                                barColor={segment.isApproved ? "#10b981" : "#6366f1"}
-                            />
-                        </div>
-                        <button
-                            onClick={() => setShowTrimmer(!showTrimmer)}
-                            className={`p-2 rounded-lg transition border flex items-center gap-2 text-xs font-bold ${showTrimmer ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'}`}
-                        >
-                            <Scissors size={14} />
-                            {showTrimmer ? 'CLOSE EDITOR' : 'TRIM'}
-                        </button>
-                    </div>
-
-                    {showTrimmer && (
-                        <AudioTrimmer 
-                            audioUrl={segment.audioUrl}
-                            onTrimmed={handleTrimmed}
-                            onCancel={() => setShowTrimmer(false)}
-                        />
-                    )}
-                </div>
-            )}
         </div>
     );
 });

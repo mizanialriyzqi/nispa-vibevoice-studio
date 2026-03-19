@@ -58,7 +58,7 @@ export default function ScriptInputArea() {
                 subtitleDefault=".txt or .md format"
                 titleLoaded={scriptFile?.name}
                 subtitleLoaded="Script loaded successfully"
-                activeColorClass="indigo-500"
+                activeBorderClass="border-indigo-500"
                 activeBgClass="bg-indigo-500/5"
                 activeTextClass="text-indigo-400"
                 layout="horizontal"

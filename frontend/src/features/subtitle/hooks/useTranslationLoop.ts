@@ -1,5 +1,6 @@
 import { useSubtitleContext } from '../context/SubtitleContext';
 import { useTranslationContext } from '../context/TranslationContext';
+import { translationApi } from '../../../services/translationApi';
 
 /**
  * Custom hook that implements the main translation loop for subtitle segments.
@@ -92,36 +93,29 @@ export const useTranslationLoop = () => {
                 fd.append('source_language', sourceCode);
                 fd.append('model_name', selectedOllamaModel);
 
-                const res = await fetch('http://127.0.0.1:8000/api/translate-batch', {
-                    method: 'POST', body: fd
-                });
+                const data = await translationApi.translateBatch(fd);
+                const translatedChunk = data.segments;
 
-                if (res.ok) {
-                    const data = await res.json();
-                    const translatedChunk = data.segments;
-                    
-                    // Merge translated chunk back into updatedSegments
-                    for (let j = 0; j < translatedChunk.length; j++) {
-                        updatedSegments[i + j] = translatedChunk[j];
-                    }
-
-                    // Update UI state for current items
-                    if (translatedChunk.length > 0) {
-                        const lastTrans = translatedChunk[translatedChunk.length - 1];
-                        setPreviousOriginalText(setCurrentOriginalText(lastTrans.original_text || ''));
-                        setPreviousTranslatedText(setCurrentTranslatedText(lastTrans.text || ''));
-                    }
-
-                    processedSegments += chunk.length;
-                    const progress = Math.round((processedSegments / totalSegments) * 100);
-                    setTranslationProgress(progress);
-                    
-                    // Update main segments state to show changes in the editor/UI
-                    setSubtitleSegments([...updatedSegments]);
-                } else {
-                    const errData = await res.json();
-                    throw new Error(errData.detail || "Chunk translation failed");
+                // Merge translated chunk back into updatedSegments
+                for (let j = 0; j < translatedChunk.length; j++) {
+                    updatedSegments[i + j] = translatedChunk[j];
                 }
+
+                // Update UI state for current items
+                if (translatedChunk.length > 0) {
+                    const lastTrans = translatedChunk[translatedChunk.length - 1];
+                    setPreviousOriginalText(lastTrans.original_text || '');
+                    setCurrentOriginalText(lastTrans.original_text || '');
+                    setPreviousTranslatedText(lastTrans.text || '');
+                    setCurrentTranslatedText(lastTrans.text || '');
+                }
+
+                processedSegments += chunk.length;
+                const progress = Math.round((processedSegments / totalSegments) * 100);
+                setTranslationProgress(progress);
+
+                // Update main segments state to show changes in the editor/UI
+                setSubtitleSegments([...updatedSegments]);
             }
 
             setTranslationProgress(100);

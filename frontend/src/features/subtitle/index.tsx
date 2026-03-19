@@ -30,7 +30,7 @@ const SubtitleModeContent: FC = () => {
         setLoadedJobId,
 
         // Modals state
-        showLogsModal, setShowLogsModal, activityLogs, setActivityLogs, currentAudioUrl,
+        showLogsModal, setShowLogsModal, activityLogs, clearLogs, currentAudioUrl,
         showPreview, setShowPreview, previewData,
         showEditor, setShowEditor, subtitleSegments, setSubtitleSegments,
         loadJobSegments, generationProgress,
@@ -109,7 +109,7 @@ const SubtitleModeContent: FC = () => {
                             icon={FileUp}
                             titleDefault="Upload Subtitles"
                             subtitleDefault="Drag and drop or click to select .srt / .vtt"
-                            activeColorClass="blue-500"
+                            activeBorderClass="border-blue-500"
                             activeBgClass="bg-blue-500/5"
                             activeTextClass="text-blue-500"
                         />
@@ -178,7 +178,7 @@ const SubtitleModeContent: FC = () => {
                 onClose={() => setShowLogsModal(false)}
                 logs={activityLogs}
                 title="Subtitle Generation Activity Logs"
-                onClear={() => setActivityLogs([])}
+                onClear={clearLogs}
                 audioUrl={currentAudioUrl}
                 progress={generationProgress}
                 onCancel={cancelGeneration}

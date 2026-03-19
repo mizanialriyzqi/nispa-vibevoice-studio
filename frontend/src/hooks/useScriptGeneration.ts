@@ -1,6 +1,10 @@
 import { useState, useRef } from 'react';
 import { useScriptContext } from '../features/script/context/ScriptContext';
 import { useGlobalContext } from '../context/GlobalContext';
+import { ttsApi } from '../services/ttsApi';
+import { apiFetch } from '../services/apiClient';
+import { base64ToBlob } from '../utils/audio';
+import type { SseMessage } from '../types/sse';
 
 /**
  * Custom hook to manage the script-based audio generation workflow.
@@ -29,7 +33,7 @@ export const useScriptGeneration = () => {
      * 
      * @param {any} message - The parsed message from the SSE stream.
      */
-    const handleProgressMessage = (message: any) => {
+    const handleProgressMessage = (message: SseMessage) => {
         const timestamp = new Date().toLocaleTimeString();
 
         if (message.type === 'progress') {
@@ -47,12 +51,7 @@ export const useScriptGeneration = () => {
             setProgressValue(100);
             setProgressMessages(prev => [...prev, `[${timestamp}] ✓ Complete!`]);
 
-            const binaryString = atob(message.audioBase64);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            const blob = new Blob([bytes], { type: 'audio/mpeg' });
+            const blob = base64ToBlob(message.audioBase64, 'audio/mpeg');
             const url = URL.createObjectURL(blob);
             setAudioUrl(url);
 
@@ -117,22 +116,11 @@ export const useScriptGeneration = () => {
         }
 
         try {
-            const response = await fetch('http://127.0.0.1:8000/api/tasks/generate', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.detail || `HTTP Error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            const taskId = data.task_id;
+            const { task_id: taskId } = await ttsApi.submitScriptTask(formData);
             setCurrentTaskId(taskId);
 
             abortControllerRef.current = new AbortController();
-            const streamResponse = await fetch(`http://127.0.0.1:8000/api/tasks/${taskId}/stream`, {
+            const streamResponse = await apiFetch(`/api/tasks/${taskId}/stream`, {
                 signal: abortControllerRef.current.signal,
             });
 
@@ -176,12 +164,12 @@ export const useScriptGeneration = () => {
                     console.error('Failed to parse final SSE message:', e);
                 }
             }
-        } catch (err: any) {
-            if (err.name === 'AbortError') {
+        } catch (err: unknown) {
+            if (err instanceof Error && err.name === 'AbortError') {
                 console.log('Generation stream disconnected.');
                 return;
             }
-            setErrorMsg(err.message || 'An unexpected error occurred.');
+            setErrorMsg(err instanceof Error ? err.message : 'An unexpected error occurred.');
             setShowProgressModal(false);
         } finally {
             setIsProcessing(false);
@@ -201,9 +189,7 @@ export const useScriptGeneration = () => {
 
         if (currentTaskId) {
             try {
-                await fetch(`http://127.0.0.1:8000/api/tasks/${currentTaskId}/cancel`, {
-                    method: 'POST'
-                });
+                await ttsApi.cancelTask(currentTaskId, false);
             } catch (e) {
                 console.error("Failed to cancel task on backend:", e);
             }

@@ -5,7 +5,12 @@ import ModelSelector from '../../../components/ui/ModelSelector';
 import LanguageSelector from '../../../components/ui/LanguageSelector';
 import { GenerationProgressDisplay } from './GenerationProgressDisplay';
 import { useSubtitleContext } from '../context/SubtitleContext';
+import type { SubtitleSegment } from '../context/SubtitleContext';
 import { useGlobalContext } from '../../../context/GlobalContext';
+import { ttsApi } from '../../../services/ttsApi';
+import { base64ToBlobUrl } from '../../../utils/audio';
+import type { SseMessage, SseNewSegment } from '../../../types/sse';
+import type { GeneratedSegment } from '../../../types/generated';
 
 /**
  * Component that provides controls for synthesizing audio from subtitles.
@@ -35,9 +40,10 @@ export const GenerationControls: React.FC = () => {
         selectedLanguage,
         setSelectedLanguage,
         activityLogs,
-        setActivityLogs,
         showLogsModal,
         setShowLogsModal,
+        addLog,
+        clearLogs,
         currentAudioUrl,
         setCurrentAudioUrl,
         setErrorMsg,
@@ -52,18 +58,16 @@ export const GenerationControls: React.FC = () => {
         currentTaskId,
         setCurrentTaskId,
         cancelGeneration,
-        setTotalItems,
-        setCurrentItems,
-        setEstimatedTime,
+        updateItemProgress,
+        recordStartTime,
+        resetProgress,
         totalItems,
         currentItems,
         estimatedTime,
         setShowReviewModal
     } = useSubtitleContext();
 
-    const lastLogRef = React.useRef<string>('');
     const eventSourceRef = React.useRef<EventSource | null>(null);
-    const startTimeRef = React.useRef<number>(0);
 
     const [outputFormat, setOutputFormat] = React.useState<'mp3' | 'wav'>('mp3');
     const [voiceDescription, setVoiceDescription] = React.useState<string>('');
@@ -94,17 +98,12 @@ export const GenerationControls: React.FC = () => {
         setErrorMsg('');
         setIsProcessing(true);
         setAudioUrl(null);
-        setActivityLogs([]); 
+        clearLogs();
         setProgress(0);
-        setGeneratedSegments([]); // Clear previous previews
-        lastLogRef.current = '';
+        setGeneratedSegments([]);
         setShowLogsModal(true);
-        
-        // Reset progress details
-        setTotalItems(0);
-        setCurrentItems(0);
-        setEstimatedTime('--:--');
-        startTimeRef.current = Date.now();
+        resetProgress();
+        recordStartTime();
 
         // AUTO-SAVE BEFORE GENERATION
         let currentJobId: number | null = null;
@@ -113,16 +112,6 @@ export const GenerationControls: React.FC = () => {
         } catch (err) {
             console.warn("Failed to perform initial save:", err);
         }
-
-        /**
-         * Helper to add a timestamped log entry if it differs from the last one.
-         */
-        const addLog = (message: string) => {
-            if (message === lastLogRef.current) return;
-            lastLogRef.current = message;
-            const timestamp = new Date().toLocaleTimeString();
-            setActivityLogs(prev => [...prev, `[${timestamp}] ${message}`]);
-        };
 
         const formData = new FormData();
         
@@ -154,59 +143,39 @@ export const GenerationControls: React.FC = () => {
 
         try {
             addLog(`Submitting generation task (${outputFormat.toUpperCase()}) to server...`);
-            const res = await fetch('http://localhost:8000/api/tasks/generate-subtitles', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.detail || "Failed to submit task.");
-            }
-
-            const { task_id } = await res.json();
+            const { task_id } = await ttsApi.submitGenerationTask(formData);
             setCurrentTaskId(task_id);
             addLog(`Task created: ${task_id}. Waiting for progress...`);
 
             // Connect to EventSource for progress updates
-            const eventSource = new EventSource(`http://localhost:8000/api/tasks/${task_id}/stream`);
+            const eventSource = new EventSource(ttsApi.taskStreamUrl(task_id));
             eventSourceRef.current = eventSource;
 
             eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
+                const data = JSON.parse(event.data) as SseMessage;
 
                 if (data.type === 'progress' || data.type === 'complete') {
                     if (data.status) addLog(data.status);
                     
                     // Handle new segments for preview and UPDATE CONTEXT
                     if (data.new_segments && data.new_segments.length > 0) {
-                        const newPreviewSegments = data.new_segments.map((seg: any) => {
-                            const binaryString = atob(seg.audio_b64);
-                            const bytes = new Uint8Array(binaryString.length);
-                            for (let i = 0; i < binaryString.length; i++) {
-                                bytes[i] = binaryString.charCodeAt(i);
-                            }
-                            const blob = new Blob([bytes], { type: 'audio/wav' });
-                            const audioUrl = URL.createObjectURL(blob);
-                            
-                            return {
-                                index: seg.index,
-                                text: seg.text,
-                                audioUrl: audioUrl,
-                                audioBase64: seg.audio_b64, // Store raw B64 for database persistence
-                                voice_id: seg.voice_id,
-                                model_name: seg.model_name,
-                                language: seg.language
-                            };
-                        });
-                        
+                        const newPreviewSegments: GeneratedSegment[] = data.new_segments!.map((seg: SseNewSegment) => ({
+                            index: seg.index,
+                            text: seg.text,
+                            audioUrl: base64ToBlobUrl(seg.audio_b64),
+                            audioBase64: seg.audio_b64,
+                            voice_id: seg.voice_id,
+                            model_name: seg.model_name,
+                            language: seg.language
+                        }));
+
                         setGeneratedSegments(prev => [...prev, ...newPreviewSegments]);
-                        
+
                         // CRITICAL: Update the main subtitleSegments so that they can be saved/resumed
                         // We find each segment by index and attach its audioUrl AND metadata
-                        setSubtitleSegments((prev: any[]) => {
+                        setSubtitleSegments((prev: SubtitleSegment[]) => {
                             const updated = [...prev];
-                            newPreviewSegments.forEach((newSeg: any) => {
+                            newPreviewSegments.forEach((newSeg: GeneratedSegment) => {
                                 const idx = updated.findIndex(s => s.index === newSeg.index);
                                 if (idx !== -1) {
                                     updated[idx] = { 
@@ -223,29 +192,10 @@ export const GenerationControls: React.FC = () => {
                         });
                     }
 
-                    // CRITICAL: Progress calculation must be independent and based on 
-                    // current_item / total_items received from the backend.
+                    // Progress calculation based on current_item / total_items from backend.
                     if (data.current_item && data.total_items) {
-                        const total = data.total_items;
-                        const current = data.current_item;
-                        setTotalItems(total);
-                        setCurrentItems(current);
-
-                        const calcProgress = (current / total) * 100;
-                        setProgress(calcProgress);
-
-                        // ETA CALCULATION
-                        const elapsed = (Date.now() - startTimeRef.current) / 1000;
-                        const remaining = total - current;
-                        if (current > 0 && remaining > 0) {
-                            const avgPerItem = elapsed / current;
-                            const etaSec = Math.round(remaining * avgPerItem);
-                            const m = Math.floor(etaSec / 60);
-                            const s = etaSec % 60;
-                            setEstimatedTime(`${m}:${s.toString().padStart(2, '0')}`);
-                        } else if (remaining === 0) {
-                            setEstimatedTime('0:00');
-                        }
+                        updateItemProgress(data.current_item, data.total_items);
+                        setProgress((data.current_item / data.total_items) * 100);
                     } else if (data.progress !== undefined) {
                         // Fallback if specialized fields are missing
                         setProgress(data.progress);
@@ -258,14 +208,7 @@ export const GenerationControls: React.FC = () => {
                     setCurrentTaskId(null);
                     setProgress(100);
                     
-                    const byteCharacters = atob(data.audioBase64);
-                    const byteNumbers = new Array(byteCharacters.length);
-                    for (let i = 0; i < byteCharacters.length; i++) {
-                        byteNumbers[i] = byteCharacters.charCodeAt(i);
-                    }
-                    const byteArray = new Uint8Array(byteNumbers);
-                    const blob = new Blob([byteArray], { type: 'audio/mpeg' });
-                    const url = URL.createObjectURL(blob);
+                    const url = base64ToBlobUrl(data.audioBase64, 'audio/mpeg');
                     
                     setCurrentAudioUrl(url);
                     setAudioUrl(url);
@@ -274,7 +217,7 @@ export const GenerationControls: React.FC = () => {
 
                     // Auto-archive
                     if (subtitleSegments.length > 0) {
-                        saveJobDraft('Completed generation', subtitleSegments, subtitleFile.name);
+                        saveJobDraft('Completed generation', subtitleSegments, subtitleFile?.name);
                     }
                     
                     // OPEN REVIEW MODAL
@@ -301,8 +244,8 @@ export const GenerationControls: React.FC = () => {
                 setIsProcessing(false);
             };
 
-        } catch (err: any) {
-            const errorMessage = err.message || 'An unexpected error occurred.';
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
             setErrorMsg(errorMessage);
             addLog(`✗ Submission failed: ${errorMessage}`);
             setIsProcessing(false);

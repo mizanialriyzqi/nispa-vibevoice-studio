@@ -11,7 +11,7 @@ describe('SubtitleMode Workflow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         
-        (useGlobalContext as any).mockReturnValue({
+        vi.mocked(useGlobalContext).mockReturnValue({
             voices: [],
             models: [],
             isProcessing: false,
@@ -19,14 +19,14 @@ describe('SubtitleMode Workflow', () => {
             setAudioUrl: vi.fn(),
             fetchSystemInfo: vi.fn(),
             refreshTtsData: vi.fn()
-        });
+        } as ReturnType<typeof useGlobalContext>);
 
-        (useJobArchive as any).mockReturnValue({
+        vi.mocked(useJobArchive).mockReturnValue({
             jobs: [],
             loading: false,
             loadJobs: vi.fn(),
             saveJobDraft: vi.fn()
-        });
+        } as ReturnType<typeof useJobArchive>);
     });
 
     it('should only show Step 1 initially', () => {

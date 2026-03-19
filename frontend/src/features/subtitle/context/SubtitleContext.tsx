@@ -1,7 +1,14 @@
 import { createContext, useContext, useState, useRef, useEffect } from 'react';
+import { useGenerationProgress } from '../hooks/useGenerationProgress';
+import { useActivityLogs } from '../hooks/useActivityLogs';
+import { useTtsSelection } from '../hooks/useTtsSelection';
+import { useJobPersistence } from '../hooks/useJobPersistence';
 import type { ReactNode, RefObject, Dispatch, SetStateAction, FC } from 'react';
 import { useGlobalContext } from '../../../context/GlobalContext';
-import { useJobArchive } from '../../../hooks/useJobArchive';
+import type { Job } from '../../../hooks/useJobArchive';
+import { ttsApi } from '../../../services/ttsApi';
+import { base64ToBlobUrl } from '../../../utils/audio';
+import type { GeneratedSegment, PreviewData } from '../../../types/generated';
 
 // --- Interfaces ---
 
@@ -55,19 +62,20 @@ interface SubtitleContextProps {
     selectedLanguage: string;
     setSelectedLanguage: (l: string) => void;
 
-    // 3. Audio Generation Logs 
+    // 3. Audio Generation Logs
     activityLogs: string[];
-    setActivityLogs: Dispatch<SetStateAction<string[]>>;
     showLogsModal: boolean;
     setShowLogsModal: (b: boolean) => void;
+    addLog: (message: string) => void;
+    clearLogs: () => void;
     currentAudioUrl: string | null;
     setCurrentAudioUrl: (url: string | null) => void;
 
     // 4. Subtitle Grouping & Editor
     groupByPunctuation: boolean;
     setGroupByPunctuation: (b: boolean) => void;
-    previewData: any;
-    setPreviewData: (d: any) => void;
+    previewData: PreviewData | null;
+    setPreviewData: (d: PreviewData | null) => void;
     showPreview: boolean;
     setShowPreview: (b: boolean) => void;
     loadingPreview: boolean;
@@ -84,19 +92,19 @@ interface SubtitleContextProps {
 
     generationProgress: number;
     setGenerationProgress: (p: number) => void;
-    generatedSegments: any[];
-    setGeneratedSegments: Dispatch<SetStateAction<any[]>>;
+    generatedSegments: GeneratedSegment[];
+    setGeneratedSegments: Dispatch<SetStateAction<GeneratedSegment[]>>;
 
     showReviewModal: boolean;
     setShowReviewModal: (b: boolean) => void;
 
     // Progress details
     totalItems: number;
-    setTotalItems: (n: number) => void;
     currentItems: number;
-    setCurrentItems: (n: number) => void;
     estimatedTime: string;
-    setEstimatedTime: (s: string) => void;
+    updateItemProgress: (current: number, total: number) => void;
+    recordStartTime: () => void;
+    resetProgress: () => void;
 
     // Task Management
     currentTaskId: string | null;
@@ -104,9 +112,9 @@ interface SubtitleContextProps {
     cancelGeneration: (finalize?: boolean) => Promise<void>;
 
     // Callbacks
-    loadJobSegments: (job: any) => void;
+    loadJobSegments: (job: Job) => void;
     saveJobDraft: (customNote?: string, customSegments?: SubtitleSegment[], customFilename?: string, silent?: boolean) => Promise<number | null>;
-    updateJob: (jobId: number, updateData: any) => Promise<any>;
+    updateJob: (jobId: number, updateData: Record<string, unknown>) => Promise<Job | null>;
 }
 
 const SubtitleContext = createContext<SubtitleContextProps | undefined>(undefined);
@@ -126,7 +134,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
     // ... (rest remains the same up to saveJobDraft)
 
     const { voices, models } = useGlobalContext();
-    const { saveJobDraft: saveJobAction } = useJobArchive();
+    const { loadedJobId, setLoadedJobId, saveJobAction, updateJob } = useJobPersistence();
 
     // 1. Core State
     const [subtitleFile, setSubtitleFile] = useState<File | null>(null);
@@ -134,18 +142,15 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const [errorMsg, setErrorMsg] = useState('');
 
     // 2. TTS Voice & Model
-    const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
-    const [selectedModel, setSelectedModel] = useState<string>('VibeVoice-1.5B');
-    const [selectedLanguage, setSelectedLanguage] = useState<string>('Italian');
+    const { selectedVoiceId, setSelectedVoiceId, selectedModel, setSelectedModel, selectedLanguage, setSelectedLanguage } = useTtsSelection(voices);
 
     // 3. Audio Generation Logs
-    const [activityLogs, setActivityLogs] = useState<string[]>([]);
-    const [showLogsModal, setShowLogsModal] = useState(false);
+    const { activityLogs, setActivityLogs, showLogsModal, setShowLogsModal, addLog, clearLogs } = useActivityLogs();
     const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
 
     // 4. Subtitle Grouping
     const [groupByPunctuation, setGroupByPunctuation] = useState(false);
-    const [previewData, setPreviewData] = useState<any>(null);
+    const [previewData, setPreviewData] = useState<PreviewData | null>(null);
     const [showPreview, setShowPreview] = useState(false);
     const [loadingPreview, setLoadingPreview] = useState(false);
 
@@ -165,29 +170,18 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             segmentsRef.current = s;
         }
     };
-    const [loadedJobId, setLoadedJobId] = useState<number | null>(null);
     const [showEditor, setShowEditor] = useState(false);
     const [showArchive, setShowArchive] = useState(false);
-    const [generationProgress, setGenerationProgress] = useState(0);
-    const [generatedSegments, setGeneratedSegments] = useState<any[]>([]);
+    const {
+        generationProgress, setGenerationProgress,
+        totalItems, currentItems, estimatedTime,
+        updateItemProgress, recordStartTime, resetProgress,
+    } = useGenerationProgress();
+    const [generatedSegments, setGeneratedSegments] = useState<GeneratedSegment[]>([]);
     const [showReviewModal, setShowReviewModal] = useState(false);
-
-    // Progress details
-    const [totalItems, setTotalItems] = useState(0);
-    const [currentItems, setCurrentItems] = useState(0);
-    const [estimatedTime, setEstimatedTime] = useState('--:--');
 
     // Task Management
     const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-
-    /**
-     * Initializes default voice selection when voices data becomes available.
-     */
-    useEffect(() => {
-        if (voices.length > 0 && !selectedVoiceId) {
-            setSelectedVoiceId(voices[0].id);
-        }
-    }, [voices, selectedVoiceId]);
 
     /**
      * Resets loadedJobId when a new file is manually uploaded.
@@ -209,9 +203,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (!currentTaskId) return;
 
         try {
-            const res = await fetch(`http://127.0.0.1:8000/api/tasks/${currentTaskId}/cancel?finalize=${finalize}`, {
-                method: 'POST'
-            });
+            const res = await ttsApi.cancelTask(currentTaskId, finalize);
             if (res.ok) {
                 const timestamp = new Date().toLocaleTimeString();
                 const logMsg = finalize 
@@ -242,15 +234,9 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             try {
                 const formData = new FormData();
                 formData.append('subtitle_file', subtitleFile);
-                const res = await fetch(
-                    `http://localhost:8000/api/preview-subtitles?group_by_punctuation=${groupByPunctuation}`,
-                    { method: 'POST', body: formData }
-                );
-                if (res.ok) {
-                    const data = await res.json();
-                    segmentsToSave = data.segments;
-                    setSubtitleSegments(segmentsToSave);
-                }
+                const data = await ttsApi.previewSubtitles(formData, groupByPunctuation);
+                segmentsToSave = data.segments as SubtitleSegment[];
+                setSubtitleSegments(segmentsToSave);
             } catch (err) {
                 console.error("Auto-parsing failed during save:", err);
             }
@@ -264,7 +250,7 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
         // If we are updating an existing job
         if (loadedJobId) {
             try {
-                const updated = await updateJobAction(loadedJobId, {
+                const updated = await updateJob(loadedJobId, {
                     modified_segments: segmentsToSave,
                     notes: customNote || 'Updated from UI'
                 });
@@ -319,24 +305,18 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
      * 
      * @param {any} job - The job object from the database.
      */
-    const loadJobSegments = (job: any) => {
+    const loadJobSegments = (job: Job) => {
         setLoadedJobId(job.id);
-        
+
         // Use modified_segments as the primary source, ensuring audio fields are preserved
         // We need to convert saved Base64 back to Blob URLs for the browser
-        const segments = (job.modified_segments || job.subtitle_segments || []).map((s: any) => {
+        const segments = (job.modified_segments || job.subtitle_segments || []).map((s: SubtitleSegment) => {
             let audioUrl = s.audioUrl || null;
             
             // If we have base64 but no valid blob URL (which is always true on reload), reconstruct it
             if (s.audioBase64 && (!audioUrl || audioUrl.startsWith('blob:'))) {
                 try {
-                    const binaryString = atob(s.audioBase64);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    const blob = new Blob([bytes], { type: 'audio/wav' });
-                    audioUrl = URL.createObjectURL(blob);
+                    audioUrl = base64ToBlobUrl(s.audioBase64);
                 } catch (e) {
                     console.error("Failed to reconstruct audio from base64:", e);
                 }
@@ -364,15 +344,9 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
         }
 
         const pseudoFile = new File([], job.original_filename || 'recovered_job.srt');
-        setSubtitleFile(pseudoFile as any);
+        setSubtitleFile(pseudoFile);
 
         alert(`Loaded job #${job.id}: ${job.original_filename}`);
-    };
-
-    const { updateJob: updateJobAction } = useJobArchive();
-
-    const updateJob = async (jobId: number, updateData: any) => {
-        return await updateJobAction(jobId, updateData);
     };
 
     return (
@@ -383,8 +357,9 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             selectedVoiceId, setSelectedVoiceId,
             selectedModel, setSelectedModel,
             selectedLanguage, setSelectedLanguage,
-            activityLogs, setActivityLogs,
+            activityLogs,
             showLogsModal, setShowLogsModal,
+            addLog, clearLogs,
             currentAudioUrl, setCurrentAudioUrl,
             groupByPunctuation, setGroupByPunctuation,
             previewData, setPreviewData,
@@ -397,9 +372,8 @@ export const SubtitleProvider: FC<{ children: ReactNode }> = ({ children }) => {
             generationProgress, setGenerationProgress,
             generatedSegments, setGeneratedSegments,
             showReviewModal, setShowReviewModal,
-            totalItems, setTotalItems,
-            currentItems, setCurrentItems,
-            estimatedTime, setEstimatedTime,
+            totalItems, currentItems, estimatedTime,
+            updateItemProgress, recordStartTime, resetProgress,
             currentTaskId, setCurrentTaskId,
             cancelGeneration,
             loadJobSegments, saveJobDraft,

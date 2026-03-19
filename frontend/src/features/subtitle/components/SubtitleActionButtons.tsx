@@ -1,6 +1,7 @@
 import React from 'react';
 import { FileText, BookOpen, Trash2 } from 'lucide-react';
 import { useSubtitleContext } from '../context/SubtitleContext';
+import { ttsApi } from '../../../services/ttsApi';
 
 /**
  * Component that provides action buttons for subtitle management.
@@ -42,13 +43,7 @@ export const SubtitleActionButtons: React.FC = () => {
             const formData = new FormData();
             formData.append('subtitle_file', subtitleFile);
 
-            const res = await fetch(
-                `http://localhost:8000/api/preview-subtitles?group_by_punctuation=${groupByPunctuation}`,
-                {
-                    method: 'POST',
-                    body: formData,
-                }
-            );
+            const res = await ttsApi.previewSubtitlesRaw(formData, groupByPunctuation);
 
             if (res.ok) {
                 const data = await res.json();

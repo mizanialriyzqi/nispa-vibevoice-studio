@@ -1,5 +1,7 @@
-import { HardDrive, CheckCircle, AlertCircle } from 'lucide-react';
+import { useState } from 'react';
+import { HardDrive, CheckCircle, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import type { SystemInfoData } from '../../hooks/useSystemInfo';
+import { systemApi } from '../../services/systemApi';
 
 interface GpuStatsProps {
     torch: SystemInfoData['torch'];
@@ -7,6 +9,23 @@ interface GpuStatsProps {
 }
 
 export const GpuStats = ({ torch, gpu }: GpuStatsProps) => {
+    const [gpuDevices, setGpuDevices] = useState(gpu.gpu_devices);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const loadGpuDetails = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await systemApi.getGpuDetails();
+            setGpuDevices(data.gpu_devices);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Failed to load GPU details');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-6">
             <div className="flex items-center gap-3 mb-6">
@@ -60,35 +79,50 @@ export const GpuStats = ({ torch, gpu }: GpuStatsProps) => {
                     )}
                 </div>
 
-                {/* GPU Devices */}
-                {gpu.gpu_devices.length > 0 && (
-                    <div className="mt-6 space-y-4">
-                        <p className="font-medium text-slate-300 mb-2 px-1">GPU Device Details</p>
-                        {gpu.gpu_devices.map((device) => (
-                            <div key={device.index} className="bg-slate-900/50 p-5 rounded-xl border border-slate-700/50">
-                                <p className="font-semibold text-indigo-300 mb-4 pb-2 border-b border-slate-700/50">
-                                    {device.name || `GPU ${device.index}`}
-                                </p>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                                    <div className="bg-slate-800/50 rounded-lg p-3">
-                                        <span className="text-slate-400 text-xs block mb-1">Compute Capability</span>
-                                        <p className="text-slate-200 font-medium">{device.compute_capability}</p>
-                                    </div>
-                                    <div className="bg-slate-800/50 rounded-lg p-3">
-                                        <span className="text-slate-400 text-xs block mb-1">Total Memory</span>
-                                        <p className="text-slate-200 font-medium">{device.memory_total}</p>
-                                    </div>
-                                    <div className="bg-slate-800/50 rounded-lg p-3">
-                                        <span className="text-slate-400 text-xs block mb-1">Memory Allocated</span>
-                                        <p className="text-slate-200 font-medium">{device.memory_allocated}</p>
-                                    </div>
-                                    <div className="bg-slate-800/50 rounded-lg p-3">
-                                        <span className="text-slate-400 text-xs block mb-1">Memory Reserved</span>
-                                        <p className="text-slate-200 font-medium">{device.memory_reserved}</p>
-                                    </div>
-                                </div>
+                {/* GPU Device Details — loaded on demand */}
+                {torch.cuda_available && (
+                    <div className="mt-2">
+                        {gpuDevices.length === 0 ? (
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={loadGpuDetails}
+                                    disabled={loading}
+                                    className="flex items-center gap-2 px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600/50 rounded-lg text-sm transition disabled:opacity-50"
+                                >
+                                    {loading
+                                        ? <><Loader2 size={14} className="animate-spin" /> Loading GPU details...</>
+                                        : <><RefreshCw size={14} /> Load GPU device details</>
+                                    }
+                                </button>
+                                {error && <p className="text-rose-400 text-xs">{error}</p>}
                             </div>
-                        ))}
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between px-1">
+                                    <p className="font-medium text-slate-300">GPU Device Details</p>
+                                    <button onClick={loadGpuDetails} disabled={loading} className="text-slate-500 hover:text-slate-300 transition">
+                                        <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                                    </button>
+                                </div>
+                                {gpuDevices.map((device) => (
+                                    <div key={device.index} className="bg-slate-900/50 p-5 rounded-xl border border-slate-700/50">
+                                        <p className="font-semibold text-indigo-300 mb-4 pb-2 border-b border-slate-700/50">
+                                            {device.name || `GPU ${device.index}`}
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                                            <div className="bg-slate-800/50 rounded-lg p-3">
+                                                <span className="text-slate-400 text-xs block mb-1">Compute Capability</span>
+                                                <p className="text-slate-200 font-medium">{device.compute_capability}</p>
+                                            </div>
+                                            <div className="bg-slate-800/50 rounded-lg p-3">
+                                                <span className="text-slate-400 text-xs block mb-1">Total Memory</span>
+                                                <p className="text-slate-200 font-medium">{device.memory_total}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

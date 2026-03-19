@@ -17,10 +17,10 @@ describe('VoicesManagementModal', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        (useGlobalContext as any).mockReturnValue({
+        vi.mocked(useGlobalContext).mockReturnValue({
             voices: mockVoices,
             refreshTtsData: mockRefreshTtsData
-        });
+        } as ReturnType<typeof useGlobalContext>);
     });
 
     it('renders voices list when open', () => {
@@ -31,8 +31,8 @@ describe('VoicesManagementModal', () => {
     });
 
     it('handles voice deletion after confirmation', async () => {
-        (confirm as any).mockReturnValue(true);
-        (fetch as any).mockResolvedValue({ ok: true });
+        vi.mocked(confirm).mockReturnValue(true);
+        vi.mocked(fetch).mockResolvedValue({ ok: true } as Response);
 
         render(<VoicesManagementModal isOpen={true} onClose={vi.fn()} />);
         const deleteButtons = screen.getAllByTitle(/Delete Voice/i);
@@ -58,7 +58,7 @@ describe('VoicesManagementModal', () => {
     });
 
     it('saves updated transcription', async () => {
-        (fetch as any).mockResolvedValue({ ok: true });
+        vi.mocked(fetch).mockResolvedValue({ ok: true } as Response);
         render(<VoicesManagementModal isOpen={true} onClose={vi.fn()} />);
         
         // Enter edit mode

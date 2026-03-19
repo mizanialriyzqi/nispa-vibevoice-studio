@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { systemApi } from '../services/systemApi';
 
 /**
  * Metadata for a single GPU device detected on the system.
@@ -63,15 +64,10 @@ export function useSystemInfo() {
         setIsLoading(true);
         setError(null);
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/system-info');
-            if (res.ok) {
-                const data: SystemInfoData = await res.json();
-                setSystemInfo(data);
-            } else {
-                setError('Failed to fetch system info');
-            }
-        } catch (e: any) {
-            setError(e.message || 'Error connecting to API');
+            const data = await systemApi.getSystemInfo();
+            setSystemInfo(data);
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : 'Error connecting to API');
         } finally {
             setIsLoading(false);
         }

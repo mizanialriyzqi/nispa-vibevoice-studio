@@ -3,11 +3,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { GlobalProvider } from './context/GlobalContext.tsx'
+import { ErrorBoundary } from './components/ui/ErrorBoundary.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <GlobalProvider>
-      <App />
-    </GlobalProvider>
+    <ErrorBoundary>
+      <GlobalProvider>
+        <App />
+      </GlobalProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )

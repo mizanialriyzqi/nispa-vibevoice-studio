@@ -29,18 +29,18 @@ describe('useTranslationLoop', () => {
         global.alert = vi.fn();
         mockIsPausedRef.current = false;
 
-        (useSubtitleContext as any).mockReturnValue({
+        vi.mocked(useSubtitleContext).mockReturnValue({
             subtitleSegments: [
                 { index: 1, start_ms: 0, end_ms: 1000, text: 'Hello', is_translated: false },
                 { index: 2, start_ms: 1000, end_ms: 2000, text: 'World', is_translated: false }
             ],
             setSubtitleSegments: mockSetSubtitleSegments,
-            subtitleFile: { name: 'test.srt' },
+            subtitleFile: { name: 'test.srt' } as File,
             setSubtitleFile: mockSetSubtitleFile,
             saveJobDraft: mockSaveJobDraft
-        });
+        } as ReturnType<typeof useSubtitleContext>);
 
-        (useTranslationContext as any).mockReturnValue({
+        vi.mocked(useTranslationContext).mockReturnValue({
             targetLanguage: 'Italian',
             selectedOllamaModel: 'llama3',
             setIsTranslating: mockSetIsTranslating,
@@ -54,7 +54,7 @@ describe('useTranslationLoop', () => {
             setPreviousTranslatedText: mockSetPreviousTranslatedText,
             setCurrentOriginalText: mockSetCurrentOriginalText,
             setCurrentTranslatedText: mockSetCurrentTranslatedText
-        });
+        } as ReturnType<typeof useTranslationContext>);
     });
 
     it('should translate segments in batch', async () => {
@@ -63,10 +63,10 @@ describe('useTranslationLoop', () => {
             { index: 1, text: 'Ciao', is_translated: true },
             { index: 2, text: 'Mondo', is_translated: true }
         ];
-        (global.fetch as any).mockResolvedValue({
+        vi.mocked(global.fetch).mockResolvedValue({
             ok: true,
             json: async () => ({ segments: mockTranslatedSegments })
-        });
+        } as Response);
 
         const { result } = renderHook(() => useTranslationLoop());
 

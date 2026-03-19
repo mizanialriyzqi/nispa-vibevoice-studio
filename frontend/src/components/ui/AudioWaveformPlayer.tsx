@@ -18,10 +18,18 @@ export const AudioWaveformPlayer: React.FC<AudioWaveformPlayerProps> = ({
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const audioCtxRef = useRef<AudioContext | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [audioData, setAudioData] = useState<AudioBuffer | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
+
+    // Close AudioContext on unmount to prevent resource leak
+    useEffect(() => {
+        return () => {
+            audioCtxRef.current?.close();
+        };
+    }, []);
 
     // Standard reset when URL changes
     useEffect(() => {
@@ -68,8 +76,12 @@ export const AudioWaveformPlayer: React.FC<AudioWaveformPlayerProps> = ({
             try {
                 const response = await fetch(audioUrl);
                 const arrayBuffer = await response.arrayBuffer();
-                const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                const decodedData = await audioCtx.decodeAudioData(arrayBuffer);
+                if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+                    type WebkitWindow = Window & { webkitAudioContext?: typeof AudioContext };
+                    const AudioCtx = window.AudioContext || (window as WebkitWindow).webkitAudioContext!;
+                    audioCtxRef.current = new AudioCtx();
+                }
+                const decodedData = await audioCtxRef.current.decodeAudioData(arrayBuffer);
                 setAudioData(decodedData);
                 drawWaveform(decodedData, 0);
                 
@@ -153,7 +165,14 @@ export const AudioWaveformPlayer: React.FC<AudioWaveformPlayerProps> = ({
     };
 
     return (
-        <div className="flex items-center gap-3 flex-1 bg-slate-900/40 rounded-xl px-4 py-3 border border-slate-700/30">
+        <div 
+            className="flex items-center gap-3 flex-1 bg-slate-900/40 rounded-xl px-4 py-3 border border-slate-700/30"
+            onContextMenu={(e) => {
+                e.preventDefault();
+                handleDownload();
+            }}
+            title="Right-click to download audio"
+        >
             <button
                 onClick={loadAndPlay}
                 disabled={isLoading}

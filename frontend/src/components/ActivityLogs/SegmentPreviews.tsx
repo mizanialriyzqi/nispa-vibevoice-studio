@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { AudioWaveformPlayer } from '../ui/AudioWaveformPlayer';
 import { AudioTrimmer } from '../ui/AudioTrimmer';
 import { Scissors } from 'lucide-react';
+import type { GeneratedSegment } from '../../types/generated';
 
 interface SegmentPreviewsProps {
-    generatedSegments: any[];
+    generatedSegments: GeneratedSegment[];
 }
 
 export const SegmentPreviews: React.FC<SegmentPreviewsProps> = ({ generatedSegments }) => {

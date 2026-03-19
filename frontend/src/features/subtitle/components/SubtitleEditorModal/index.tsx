@@ -3,6 +3,7 @@ import { X, Save, RotateCcw, Plus, ChevronLeft, ChevronRight } from 'lucide-reac
 import { SubtitleSegmentRow } from './SubtitleSegmentRow';
 import type { SubtitleEditorModalProps } from './types';
 import { useSubtitleEditor } from './useSubtitleEditor';
+import { ttsApi } from '../../../../services/ttsApi';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -51,10 +52,7 @@ export const SubtitleEditorModal: React.FC<SubtitleEditorModalProps> = ({
             const fd = new FormData();
             fd.append('segments_json', JSON.stringify(audioSegments));
 
-            const res = await fetch('http://localhost:8000/api/export-audio-segments', {
-                method: 'POST',
-                body: fd
-            });
+            const res = await ttsApi.exportAudioSegments(fd);
 
             if (res.ok) {
                 const blob = await res.blob();
@@ -78,7 +76,7 @@ export const SubtitleEditorModal: React.FC<SubtitleEditorModalProps> = ({
                     <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-[64px] -z-10" />
                     <div className="relative z-10">
                         <h2 className="text-2xl font-bold text-slate-100">Subtitle & Audio Studio</h2>
-                        <p className="text-slate-400 text-sm mt-1">{filename} • {approvedCount}/{segments.length} verified</p>
+                        <p className="text-slate-400 text-sm mt-1">{filename} • {segments.length} segments</p>
                     </div>
                     <button
                         onClick={onClose}
@@ -100,8 +98,6 @@ export const SubtitleEditorModal: React.FC<SubtitleEditorModalProps> = ({
                                 onEndTimeChange={handleEndTimeChange}
                                 onDelete={handleDeleteSegment}
                                 onTranslated={handleSegmentTranslated}
-                                onAudioUpdated={handleAudioUpdated}
-                                onApprovalToggle={handleApprovalToggle}
                             />
                         ))}
                     </div>

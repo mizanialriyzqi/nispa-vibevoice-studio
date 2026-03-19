@@ -4,6 +4,7 @@ import { LogHeader } from './LogHeader';
 import { ActivityFeed } from './ActivityFeed';
 import { SegmentPreviews } from './SegmentPreviews';
 import { LogFooter } from './LogFooter';
+import type { GeneratedSegment } from '../../types/generated';
 
 interface ActivityLogsModalProps {
     isOpen: boolean;
@@ -14,7 +15,7 @@ interface ActivityLogsModalProps {
     audioUrl?: string | null;
     progress?: number;
     onCancel?: (finalize: boolean) => void;
-    generatedSegments?: any[];
+    generatedSegments?: GeneratedSegment[];
     totalItems?: number;
     currentItems?: number;
     estimatedTime?: string;

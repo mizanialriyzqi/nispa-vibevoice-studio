@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react';
+import { jobsApi } from '../services/jobsApi';
+import { formatTimeSrt } from '../utils/format';
 
 /**
  * Represents a single subtitle segment in a job.
@@ -48,11 +50,8 @@ export function useJobArchive() {
     const loadJobs = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/jobs?limit=100');
-            if (res.ok) {
-                const data = await res.json();
-                setJobs(data.jobs);
-            }
+            const data = await jobsApi.list();
+            setJobs(data.jobs);
         } catch (err) {
             console.error('Failed to load jobs:', err);
         } finally {
@@ -68,9 +67,7 @@ export function useJobArchive() {
     const deleteJob = useCallback(async (jobId: number) => {
         if (confirm('Are you sure you want to delete this job?')) {
             try {
-                const res = await fetch(`http://127.0.0.1:8000/api/jobs/${jobId}`, {
-                    method: 'DELETE',
-                });
+                const res = await jobsApi.delete(jobId);
                 if (res.ok) {
                     await loadJobs();
                 }
@@ -90,18 +87,6 @@ export function useJobArchive() {
             alert("No segments to download.");
             return;
         }
-
-        /**
-         * Helper to format milliseconds into SRT timestamp format (HH:MM:SS,mmm).
-         */
-        const formatTimeSrt = (ms: number): string => {
-            const totalSeconds = Math.floor(ms / 1000);
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            const seconds = totalSeconds % 60;
-            const milliseconds = Math.floor(ms % 1000);
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`;
-        };
 
         let srtContent = '';
         job.modified_segments.forEach((seg, i) => {
@@ -129,23 +114,17 @@ export function useJobArchive() {
      * @param {boolean} silent - If true, suppresses the success alert. Defaults to false.
      * @returns {Promise<Job | null>} The saved job record or null if failed.
      */
-    const saveJobDraft = useCallback(async (jobData: any, silent = false) => {
+    const saveJobDraft = useCallback(async (jobData: unknown, silent = false) => {
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/jobs/create', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(jobData),
-            });
-
-            if (res.ok) {
-                const savedJob = await res.json();
+            const savedJob = await jobsApi.create(jobData, silent);
+            if (savedJob) {
                 if (!silent) {
                     alert(`Job #${savedJob.id} saved as draft!`);
                 }
-                await loadJobs(); // Refresh the list
+                await loadJobs();
                 return savedJob;
-            } else {
-                if (!silent) alert('Failed to save job');
+            } else if (!silent) {
+                alert('Failed to save job');
             }
         } catch (err) {
             console.error('Error saving job:', err);
@@ -161,17 +140,11 @@ export function useJobArchive() {
      * @param {any} updateData - The updated job data (modified_segments, notes, etc).
      * @returns {Promise<Job | null>} The updated job record or null if failed.
      */
-    const updateJob = useCallback(async (jobId: number, updateData: any) => {
+    const updateJob = useCallback(async (jobId: number, updateData: unknown) => {
         try {
-            const res = await fetch(`http://127.0.0.1:8000/api/jobs/${jobId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updateData),
-            });
-
+            const res = await jobsApi.put(jobId, updateData);
             if (res.ok) {
-                const updatedJob = await res.json();
-                // Refresh local jobs list to reflect changes in UI
+                const updatedJob: Job = await res.json();
                 setJobs(prev => prev.map(j => j.id === jobId ? updatedJob : j));
                 return updatedJob;
             } else {

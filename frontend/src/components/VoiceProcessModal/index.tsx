@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Wand2, CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
 import { AudioWaveformPlayer } from '../ui/AudioWaveformPlayer';
+import { voicesApi } from '../../services/voicesApi';
 
 interface Voice {
     id: string;
@@ -25,7 +26,7 @@ export const VoiceProcessModal: React.FC<VoiceProcessModalProps> = ({ isOpen, on
         setIsProcessing(true);
         setStatus('idle');
         try {
-            const res = await fetch(`http://127.0.0.1:8000/api/voices/${voice.id}/reprocess`, { method: 'POST' });
+            const res = await voicesApi.reprocess(voice.id);
             if (res.ok) {
                 setStatus('success');
                 onProcessed();
@@ -67,8 +68,8 @@ export const VoiceProcessModal: React.FC<VoiceProcessModalProps> = ({ isOpen, on
                     <div className="space-y-4">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block text-center">Preview Original Audio</span>
                         <div className="flex items-center justify-center">
-                            <AudioWaveformPlayer 
-                                audioUrl={`http://127.0.0.1:8000/api/voices/${voice.id}/audio?t=${Date.now()}`}
+                            <AudioWaveformPlayer
+                                audioUrl={voicesApi.audioUrl(voice.id)}
                                 barColor="#6366f1"
                             />
                         </div>

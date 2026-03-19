@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Scissors, Play, Square, Check, Loader2, RotateCcw } from 'lucide-react';
+import { ttsApi } from '../../services/ttsApi';
 
 interface AudioTrimmerProps {
     audioUrl: string;
@@ -73,15 +74,7 @@ export const AudioTrimmer: React.FC<AudioTrimmerProps> = ({ audioUrl, onTrimmed,
             const base64Audio = await base64Promise;
 
             // 3. Call backend to trim
-            const trimRes = await fetch('http://localhost:8000/api/system/trim-audio', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    audio_base64: base64Audio,
-                    start_sec: markIn,
-                    end_sec: markOut
-                })
-            });
+            const trimRes = await ttsApi.trimAudio(base64Audio as string, markIn, markOut);
 
             if (trimRes.ok) {
                 const data = await trimRes.json();

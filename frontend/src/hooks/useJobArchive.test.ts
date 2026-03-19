@@ -18,10 +18,10 @@ describe('useJobArchive', () => {
 
     it('fetches jobs', async () => {
         const mockJobs = [{ id: 1, original_filename: 'test.wav' }];
-        (fetch as any).mockResolvedValue({
+        vi.mocked(fetch).mockResolvedValue({
             ok: true,
             json: async () => ({ jobs: mockJobs })
-        });
+        } as Response);
 
         const { result } = renderHook(() => useJobArchive());
 
@@ -29,13 +29,13 @@ describe('useJobArchive', () => {
             await result.current.loadJobs();
         });
 
-        expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:8000/api/jobs?limit=100');
+        expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:8000/api/jobs?limit=100', undefined);
         expect(result.current.jobs).toEqual(mockJobs);
     });
 
     it('deletes job if confirmed', async () => {
-        (confirm as any).mockReturnValue(true);
-        (fetch as any).mockResolvedValue({ ok: true, json: async () => ({ jobs: [] }) });
+        vi.mocked(confirm).mockReturnValue(true);
+        vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ jobs: [] }) } as Response);
 
         const { result } = renderHook(() => useJobArchive());
 
@@ -45,10 +45,11 @@ describe('useJobArchive', () => {
 
         expect(confirm).toHaveBeenCalled();
         expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:8000/api/jobs/1', { method: 'DELETE' });
+        // Note: loadJobs is called after delete, so fetch is called twice
     });
 
     it('does not delete job if not confirmed', async () => {
-        (confirm as any).mockReturnValue(false);
+        vi.mocked(confirm).mockReturnValue(false);
 
         const { result } = renderHook(() => useJobArchive());
 

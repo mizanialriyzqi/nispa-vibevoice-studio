@@ -87,3 +87,18 @@ Per riprendere un lavoro passato:
 2. Cerca i lavori che presentano il badge verde **🎵 AUDIO SAVED**.
 3. Premi l'icona viola per ricaricarlo in memoria.
 4. L'audio verrà ricostruito istantaneamente. Potrai procedere alla finalizzazione o continuare a generare i pezzi mancanti.
+
+
+## FAQ
+
+Se all'avvio, cliccando su start, appare un errore: 
+
+L'esecuzione di script è disabilitata nel
+sistema in uso. Per ulteriori informazioni, vedere about_Execution_Policies all'indirizzo
+https://go.microsoft.com/fwlink/?LinkID=135170.
+
+Aprite Powershell come amministratore ed eseguite il comando:
+
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+E se vi dice che non trova Python 3.11... dovrete installare python 3.11

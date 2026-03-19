@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
-import { X, CheckCircle2, Download, Loader2, Music, FileText, AlertCircle, RefreshCw } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { X, CheckCircle2, Download, Loader2, Music, FileText, AlertCircle, RefreshCw, Scissors } from 'lucide-react';
 import { AudioWaveformPlayer } from '../../../components/ui/AudioWaveformPlayer';
+import { AudioTrimmer } from '../../../components/ui/AudioTrimmer';
 import { useSubtitleContext } from '../context/SubtitleContext';
 import type { SubtitleSegment } from '../context/SubtitleContext';
 import { useGlobalContext } from '../../../context/GlobalContext';
+import { ttsApi } from '../../../services/ttsApi';
+import { base64ToBlobUrl } from '../../../utils/audio';
 
 interface JobReviewModalProps {
     isOpen: boolean;
@@ -22,6 +25,7 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
 }) => {
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [regeneratingIds, setRegeneratingIds] = useState<Record<number, boolean>>({});
+    const [trimmingId, setTrimmingId] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [filterGenerated, setFilterGenerated] = useState(true);
@@ -29,7 +33,68 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
     
     const { setSubtitleSegments, updateJob, selectedVoiceId, selectedModel, selectedLanguage } = useSubtitleContext();
 
+    // Build and memoize audio URL map for all segments, revoking stale blob URLs on change
+    const blobUrlsRef = useRef<Record<number, string>>({});
+    const audioUrlMap = useMemo(() => {
+        const prevBlobUrls = blobUrlsRef.current;
+        const newBlobUrls: Record<number, string> = {};
+        const map: Record<number, string | undefined> = {};
+
+        segments.forEach(seg => {
+            if (seg.audioUrl && seg.audioUrl.startsWith('data:audio/')) {
+                map[seg.index] = seg.audioUrl;
+            } else if (seg.audioUrl && seg.audioUrl.startsWith('blob:')) {
+                map[seg.index] = seg.audioUrl;
+            } else if (seg.audioBase64) {
+                try {
+                    const url = base64ToBlobUrl(seg.audioBase64);
+                    newBlobUrls[seg.index] = url;
+                    map[seg.index] = url;
+                } catch (e) {
+                    console.error("Failed to reconstruct audio in modal:", e);
+                }
+            }
+        });
+
+        // Revoke blob URLs that are no longer needed
+        Object.entries(prevBlobUrls).forEach(([key, url]) => {
+            const idx = Number(key);
+            if (!newBlobUrls[idx]) {
+                URL.revokeObjectURL(url);
+            }
+        });
+        blobUrlsRef.current = newBlobUrls;
+        return map;
+    }, [segments]);
+
+    // Revoke all blob URLs on unmount
+    useEffect(() => {
+        return () => {
+            Object.values(blobUrlsRef.current).forEach(url => URL.revokeObjectURL(url));
+        };
+    }, []);
+
     if (!isOpen) return null;
+
+    const handleTrimmed = async (index: number, newB64: string) => {
+        const newAudioUrl = `data:audio/wav;base64,${newB64}`;
+        
+        // Update context
+        const updatedSegments = segments.map(s => {
+            if (s.index === index) {
+                return { ...s, audioBase64: newB64, audioUrl: newAudioUrl };
+            }
+            return s;
+        });
+        setSubtitleSegments(updatedSegments);
+
+        // Update database
+        if (jobId) {
+            await updateJob(jobId, { modified_segments: updatedSegments });
+        }
+        
+        setTrimmingId(null);
+    };
 
     // Filter segments based on toggle
     const filteredSegments = filterGenerated 
@@ -49,32 +114,7 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
         setCurrentPage(1);
     };
 
-    // Helper to get a valid audio URL (either existing or reconstructed from base64)
-    const getActiveAudioUrl = (seg: SubtitleSegment) => {
-        if (seg.audioUrl && !seg.audioUrl.startsWith('blob:') && seg.audioUrl.startsWith('data:audio/')) {
-            return seg.audioUrl;
-        }
-        
-        if (seg.audioUrl && seg.audioUrl.startsWith('blob:')) {
-            return seg.audioUrl;
-        }
-
-        if (seg.audioBase64) {
-            try {
-                const binaryString = atob(seg.audioBase64);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-                const blob = new Blob([bytes], { type: 'audio/wav' });
-                return URL.createObjectURL(blob);
-            } catch (e) {
-                console.error("Failed to reconstruct audio in modal:", e);
-            }
-        }
-        
-        return seg.audioUrl;
-    };
+    const getActiveAudioUrl = (seg: SubtitleSegment) => audioUrlMap[seg.index];
 
     const handleRegenerate = async (seg: SubtitleSegment) => {
         // Use segment specific settings if available, else fallback to current context
@@ -97,17 +137,7 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
             fd.append('model_name', modelName);
             fd.append('language', lang);
 
-            const res = await fetch('http://localhost:8000/api/generate-segment', {
-                method: 'POST',
-                body: fd
-            });
-
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.detail || "Regeneration failed");
-            }
-
-            const data = await res.json();
+            const data = await ttsApi.generateSegment(fd);
             const newBase64 = data.audio_base64;
             const newAudioUrl = `data:audio/wav;base64,${newBase64}`;
 
@@ -135,9 +165,9 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
                 });
             }
 
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error("Regeneration error:", e);
-            setError(`Failed to regenerate segment #${seg.index}: ${e.message}`);
+            setError(`Failed to regenerate segment #${seg.index}: ${e instanceof Error ? e.message : String(e)}`);
         } finally {
             setRegeneratingIds(prev => ({ ...prev, [seg.index]: false }));
         }
@@ -151,12 +181,10 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
         setError(null);
         
         try {
-            const response = await fetch(`http://localhost:8000/api/jobs/${jobId}/finalize?output_format=mp3`, {
-                method: 'POST'
-            });
-            
+            const response = await ttsApi.finalizeJob(jobId, 'mp3');
+
             if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
+                const errData = await response.json().catch(() => ({})) as { detail?: string };
                 throw new Error(errData.detail || "Finalization failed");
             }
             
@@ -170,8 +198,8 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
             
-        } catch (err: any) {
-            setError(err.message || "An error occurred during finalization");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "An error occurred during finalization");
         } finally {
             setIsFinalizing(false);
         }
@@ -301,7 +329,31 @@ export const JobReviewModal: React.FC<JobReviewModalProps> = ({
                                         <RefreshCw size={18} />
                                     )}
                                 </button>
+                                
+                                <button
+                                    onClick={() => setTrimmingId(trimmingId === seg.index ? null : seg.index)}
+                                    disabled={!getActiveAudioUrl(seg)}
+                                    className={`shrink-0 p-3 rounded-xl transition-all flex items-center justify-center border ${
+                                        trimmingId === seg.index 
+                                        ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg shadow-indigo-500/20' 
+                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700 hover:border-slate-600'
+                                    }`}
+                                    title="Trim this segment"
+                                >
+                                    <Scissors size={18} />
+                                </button>
                             </div>
+
+                            {/* Trimmer Area (Conditional) */}
+                            {trimmingId === seg.index && getActiveAudioUrl(seg) && (
+                                <div className="p-4 bg-slate-950/50 rounded-2xl border border-indigo-500/20 animate-fade-in">
+                                    <AudioTrimmer 
+                                        audioUrl={getActiveAudioUrl(seg)!} 
+                                        onTrimmed={(b64) => handleTrimmed(seg.index, b64)}
+                                        onCancel={() => setTrimmingId(null)}
+                                    />
+                                </div>
+                            )}
                         </div>
                     ))}
 

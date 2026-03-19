@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react';
 import { useGlobalContext } from '../../context/GlobalContext';
+import type { Voice } from '../../context/GlobalContext';
+import { voicesApi } from '../../services/voicesApi';
 
 export const useVoicesManagement = () => {
     const { voices, refreshTtsData, isLoadingTtsData } = useGlobalContext();
@@ -13,7 +15,7 @@ export const useVoicesManagement = () => {
 
     // Process modal state
     const [showProcessModal, setShowProcessModal] = useState(false);
-    const [selectedVoiceForProcess, setSelectedVoiceForProcess] = useState<any>(null);
+    const [selectedVoiceForProcess, setSelectedVoiceForProcess] = useState<Voice | null>(null);
     
     // Props for FileUploadArea
     const [tempFile, setTempFile] = useState<File | null>(null);
@@ -27,7 +29,7 @@ export const useVoicesManagement = () => {
         if (!confirm(`Are you sure you want to delete the voice "${voiceId}"?`)) return;
 
         try {
-            const res = await fetch(`http://127.0.0.1:8000/api/voices/${voiceId}`, { method: 'DELETE' });
+            const res = await voicesApi.delete(voiceId);
             if (res.ok) {
                 await refreshTtsData();
             }
@@ -36,18 +38,14 @@ export const useVoicesManagement = () => {
         }
     };
 
-    const handleReprocess = (voice: any) => {
+    const handleReprocess = (voice: Voice) => {
         setSelectedVoiceForProcess(voice);
         setShowProcessModal(true);
     };
 
     const handleSaveTranscription = async (voiceId: string) => {
         try {
-            const res = await fetch(`http://127.0.0.1:8000/api/voices/${voiceId}/transcription`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transcription: editText })
-            });
+            const res = await voicesApi.saveTranscription(voiceId, editText);
             if (res.ok) {
                 setEditingId(null);
                 await refreshTtsData();
@@ -78,10 +76,7 @@ export const useVoicesManagement = () => {
         }
 
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/upload-voice', {
-                method: 'POST',
-                body: formData
-            });
+            const res = await voicesApi.upload(formData);
             if (res.ok) {
                 // Small delay to allow OS file system to settle
                 setTimeout(async () => {

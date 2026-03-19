@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import type { SubtitleSegment } from './context/SubtitleContext';
 import '@testing-library/jest-dom/vitest';
 import { SubtitleProvider, useSubtitleContext } from './context/SubtitleContext';
 import { SubtitleGroupingControls } from './components/SubtitleGroupingControls';
@@ -100,7 +101,7 @@ describe('Grouping Workflow', () => {
 });
 
 // Helper component for the second test to avoid complex state simulation in the first wrapper
-const ConsumerComponent = ({ mockSegments }: { mockSegments: any[] }) => {
+const ConsumerComponent = ({ mockSegments }: { mockSegments: SubtitleSegment[] }) => {
     const { 
         subtitleSegments, 
         setPreviewData, 

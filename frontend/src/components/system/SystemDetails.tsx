@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Cpu, FlaskConical, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import type { SystemInfoData } from '../../hooks/useSystemInfo';
+import { systemApi } from '../../services/systemApi';
 
 interface SystemDetailsProps {
     system: SystemInfoData['system'];
@@ -21,7 +22,7 @@ export const SystemDetails = ({ system, torch }: SystemDetailsProps) => {
         setIsTesting(true);
         setTestResults(null);
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/system/test-qwen', { method: 'POST' });
+            const res = await systemApi.testQwen();
             const data = await res.json();
             setTestResults(data.results);
         } catch (err) {
